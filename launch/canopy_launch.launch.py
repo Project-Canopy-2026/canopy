@@ -47,8 +47,8 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        #manipulation,
+        manipulation,
         trajectory_planner_obstacle_avoidance,
-        #planting,
-        #visualization,
+        planting,
+        visualization,
     ])
