@@ -38,12 +38,12 @@ def generate_launch_description():
         executable = "static_transform_publisher",
         name = "base_to_gps_static_tf",
         arguments = [
-            "--x", "0.25",
-            "--y", "0.42",
-            "--z", "1.06",
-            "--yaw", "0",
-            "--pitch", "0",
-            "--roll", "0",
+            "--x", "-0.495",
+            "--y", "0.0",
+            "--z", "0.778",
+            "--yaw", "0.0",
+            "--pitch", "0.0",
+            "--roll", "0.0",
             "--frame-id", "base_link",
             "--child-frame-id", "swiftnav-gnss"]
     )
