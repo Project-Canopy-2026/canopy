@@ -70,15 +70,15 @@ def generate_launch_description():
         ]
     )
 
-    perception_node = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(
-                get_package_share_directory('pot_detector'),
-                'launch',
-                'pot_detection.launch.py'
-            )
-        )
-    )
+    # perception_node = IncludeLaunchDescription(
+    #     PythonLaunchDescriptionSource(
+    #         os.path.join(
+    #             get_package_share_directory('pot_detector'),
+    #             'launch',
+    #             'pot_detection.launch.py'
+    #         )
+    #     )
+    # )
 
     # robot_description = ParameterValue(
     #     Command([
