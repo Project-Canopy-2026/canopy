@@ -6,7 +6,7 @@ from datetime import datetime
 import os
 
 # BEFORE running this code, define a save directory
-save_dir = "images"
+save_dir = ...
 os.makedirs(save_dir, exist_ok=True)
 
 # Initialize RealSense streaming pipeline
