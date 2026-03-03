@@ -10,6 +10,9 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        ('share/' + package_name + '/launch', ['launch/gnss_bringup.launch.py']),
+        ('share/' + package_name + '/config', ['config/ntrip_client.yaml']),
+        ('share/' + package_name + '/config', ['config/gnss_driver.yaml'])
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -24,6 +27,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'rtk_corrections_node = gnss.rtk_corrections_node:main'
+            'gnss_driver_node = gnss.gnss_driver_node:main'
         ],
     },
 )
