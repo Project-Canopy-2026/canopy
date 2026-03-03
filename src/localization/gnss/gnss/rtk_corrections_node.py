@@ -9,6 +9,8 @@ from rclpy.node import Node
 
 class ntrip_client(Node):
     def __init__(self):
+        
+        super().__init__('ntripclient')
 
         #self.rtcm_topic = '/rtcm'
 
@@ -98,7 +100,7 @@ class ntrip_client(Node):
 
 
     def destroy_node(self):
-        self._stop.set()
+        self.stop.set()
         try:
             if self.serial_conn and self.serial_conn.is_open:
                 self.serial_conn.close()

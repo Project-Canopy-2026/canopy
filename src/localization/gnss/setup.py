@@ -28,7 +28,6 @@ setup(
     entry_points={
         'console_scripts': [
             'rtk_corrections_node = gnss.rtk_corrections_node:main'
-            'gnss_driver_node = gnss.gnss_driver_node:main'
         ],
     },
 )
