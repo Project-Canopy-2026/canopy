@@ -27,7 +27,10 @@ def generate_launch_description():
         package = 'swiftnav_ros2_driver',
         name = 'swiftnav_gnss_driver',
         executable = 'sbp-to-ros',
-        parameters = [gnss_driver_params]
+        parameters = [gnss_driver_params],
+        remappings = [('navsatfix', 'gps/navsatfix'),
+                      ('gpsfix', 'gps/gpsfix'),
+                      ('timereference', 'gps/timereference')]
     )
 
     return LaunchDescription([

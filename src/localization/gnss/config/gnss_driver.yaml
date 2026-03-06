@@ -38,7 +38,7 @@
         #"twistwithcovariancestamped",
         #"baseline",
         "timereference",
-        "imu"
+        #"imu"
       ]
 
     # SBP Logging
