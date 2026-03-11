@@ -1,0 +1,7 @@
+res: 0.2
+width_px: 1272 # 4 acres x 4 acres
+height_px: 1272
+origin_lat: 40.441111 # 40°26'28"N
+origin_lon: 79.947222 # 79°56'50"W real-world coords of pixel (0,0)
+origin_x: -83.27 # approx meters east of statue. Remember: ENU
+origin_y: 285.06
