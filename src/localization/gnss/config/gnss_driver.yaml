@@ -15,7 +15,7 @@
     connection_str: "115200|N|8|1|N"
 
     # File (interface: 3)
-    sbp_file: "/Documents/MRSD/Project_Canopy/gnss_tests/logs/open_sky_static_30m-20260220-195646Z.sbp"
+    sbp_file: "/ws/gnss_logs/open_sky_static_30m-20260220-195646Z.sbp"
 
     # ROS2 Frame Name
     frame_name: "swiftnav-gnss"
