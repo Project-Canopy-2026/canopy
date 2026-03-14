@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 'localization_bringup'
+package_name = 'localization'
 
 setup(
     name=package_name,

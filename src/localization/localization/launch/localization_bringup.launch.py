@@ -10,7 +10,7 @@ def generate_launch_description():
     gnss_bringup = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
-                get_package_share_directory('gnss_bringup'),
+                get_package_share_directory('gnss'),
                 'launch',
                 'gps_bringup.launch.py'
             )
@@ -18,13 +18,13 @@ def generate_launch_description():
     )
     
     navsat_transform_config = os.path.join(
-        get_package_share_directory('localization_bringup'),
+        get_package_share_directory('localization'),
         'config',
         'navsat_transform.yaml'
     )
 
     global_ekf_config = os.path.join(
-        get_package_share_directory('localization_bringup'),
+        get_package_share_directory('localization'),
         'config',
         'global_ekf.yaml'
     )
