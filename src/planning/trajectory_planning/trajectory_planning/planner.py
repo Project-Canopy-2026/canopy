@@ -23,7 +23,8 @@ from scipy import stats
 
 from skimage.draw import disk
 
-
+# TODO: need to change to not take in the gnss/yaw and instead sub to odometry/global which is using neha's robot_localization package and getting a fused GPS+odom message with the message type odometry/filtered (nav_msgs/Odometry)
+# https://docs.ros.org/en/melodic/api/robot_localization/html/state_estimation_nodes.html
 # ROS2 message definitions
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from geographic_msgs.msg import GeoPoint
@@ -67,6 +68,7 @@ class PlannerNode(Node):
         self.create_subscription(
             GeoPoint, "/planning/goal_pose_geo", self.goalPointGeoCb, 1
         )
+        # localization publishing /odometry/global	nav_msgs/Odometry
         self.create_subscription(Float32, "/gnss/yaw", self.egoYawCb, 1)
         self.create_subscription(Mode, "/planning/current_mode", self.currentModeCb, 1)
         self.create_subscription(Bool, "/behavior/is_planting", self.isPlantingCb, 1)
