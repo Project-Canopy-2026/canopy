@@ -4,7 +4,7 @@ This directory contains the ros2 nodes related to obstacle detection using the l
 ## File structure
 ```text
 perception/
-├── vlp16_logger    #  Republish lidar point cloud to topic "/vlp16/depth_pcl"
+├── vlp16_logger    #  Republish lidar point cloud to topic "/vlp16/depth_pcd"
 └── README.md
 
 ```
