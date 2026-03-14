@@ -7,7 +7,6 @@ from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPo
 from time import time
 from tqdm import tqdm, trange
 from scipy.spatial.distance import pdist, squareform
-from scipy.spatial.transform import Rotation as R
 from matplotlib import pyplot as plt
 import cv2
 from enum import IntEnum
@@ -118,42 +117,18 @@ class OccupancyGridNode(Node):
 
         self.setUpParameters()
 
-        self.create_subscription(
-            PointCloud2, "/zed/point_cloud/cloud_registered", self.pcdCb, 1
-        )
-
-        self.create_subscription(PointCloud2, "/depth_pcd", self.pcdCb, 1)
+        self.create_subscription(PointCloud2, "/velodyne_points", self.pcdCb, 1)
 
         self.occ_grid_pub = self.create_publisher(OccupancyGrid, "/cost/occupancy", 1)
-
-    def transformPoints(self, pts: np.ndarray) -> np.ndarray:
-        assert isinstance(pts, np.ndarray)
-        assert pts.shape[1] == 3
-
-        # The ZED camera is tilted about 10 degrees down, so we should
-        # adjust the points accordingly
-
-        rot_matrix = R.from_euler("xyz", [0.0, -10.0, 0.0], degrees=True).as_matrix()
-
-        return pts @ rot_matrix
 
     def pcdCb(self, msg: PointCloud2):
         pts = pointcloud2_to_array(msg)
 
-        # If the pcd comes from a ZED camera, perform additional cleanup
-        from_zed = pts.ndim == 2
-
         pts = pts.flatten()
         pts = np.vstack((pts["x"], pts["y"], pts["z"])).T
 
-        if from_zed:
-
-            # Remove rows with NaN
-            pts = pts[~np.isnan(pts).any(axis=1)]
-
-            pts = self.transformPoints(pts)
-        else:
-            print(pts.dtype)
+        # Remove any NaN/Inf points (out-of-range returns)
+        pts = pts[np.isfinite(pts).all(axis=1)]
 
         # self.get_logger().info(f"Got point cloud with shape {arr.shape}: {arr[0]}!")
 
