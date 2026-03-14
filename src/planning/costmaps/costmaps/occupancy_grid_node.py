@@ -117,7 +117,7 @@ class OccupancyGridNode(Node):
 
         self.setUpParameters()
 
-        self.create_subscription(PointCloud2, "/velodyne_points", self.pcdCb, 1)
+        self.create_subscription(PointCloud2, "/vlp16/depth_pcd", self.pcdCb, 1)
 
         self.occ_grid_pub = self.create_publisher(OccupancyGrid, "/cost/occupancy", 1)
 
