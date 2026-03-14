@@ -23,7 +23,7 @@ from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from geometry_msgs.msg import Pose, Point, PointStamped
 from nav_msgs.msg import OccupancyGrid, MapMetaData
 from std_msgs.msg import Header, String, Empty, Float32
-from steward_msgs.msg import PlantingPlan, Seedling
+from canopy_msgs.msg import PlantingPlan, Seedling
 from sensor_msgs.msg import PointCloud2, PointField
 
 

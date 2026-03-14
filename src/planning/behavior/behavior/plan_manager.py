@@ -18,7 +18,7 @@ import utm
 # ROS2 message definitions
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from std_msgs.msg import Header, Float32
-from steward_msgs.msg import (
+from canopy_msgs.msg import (
     FailedChecks,
     HealthCheck,
     SystemwideStatus,

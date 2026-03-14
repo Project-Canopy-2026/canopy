@@ -1,0 +1,213 @@
+Panels:
+  - Class: rviz_common/Displays
+    Help Height: 78
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /Global Options1
+        - /CostMap (total)1
+        - /OccupancyGrid (obstacles)1
+        - /PlannedPath1
+        - /Odometry1
+        - /TF1
+      Splitter Ratio: 0.5
+    Tree Height: 600
+  - Class: rviz_common/Selection
+    Name: Selection
+  - Class: rviz_common/Tool Properties
+    Expanded: {}
+    Name: Tool Properties
+    Splitter Ratio: 0.5886790156364441
+  - Class: rviz_common/Views
+    Expanded:
+      - /Current View1
+    Name: Views
+    Splitter Ratio: 0.5
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Alpha: 0.7
+      Class: rviz_default_plugins/Map
+      Color Scheme: costmap
+      Draw Behind: false
+      Enabled: true
+      Name: CostMap (total)
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /cost/total
+      Update Topic: ""
+      Use Timestamp: false
+      Value: true
+    - Alpha: 0.5
+      Class: rviz_default_plugins/Map
+      Color Scheme: raw
+      Draw Behind: true
+      Enabled: true
+      Name: OccupancyGrid (obstacles)
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /cost/occupancy
+      Update Topic: ""
+      Use Timestamp: false
+      Value: true
+    - Class: rviz_default_plugins/Path
+      Buffer Length: 1
+      Color:
+        R: 0
+        G: 217
+        B: 0
+      Enabled: true
+      Head Arrow Shaft Length: 0.5
+      Head Arrow Shaft Radius: 0.10000000149011612
+      Head Arrow Head Length: 0.30000001192092896
+      Head Arrow Head Radius: 0.10000000149011612
+      Line Style: Lines
+      Line Width: 0.029999999329447746
+      Name: PlannedPath
+      Pose Arrow Head Length: 0.07000000029802322
+      Pose Arrow Head Radius: 0.029999999329447746
+      Pose Arrow Shaft Length: 0.07000000029802322
+      Pose Arrow Shaft Radius: 0.009999999776482582
+      Pose Style: None
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /cmd_vel/path
+      Value: true
+    - Class: rviz_default_plugins/Odometry
+      Angle Tolerance: 0.10000000149011612
+      Covariance:
+        Orientation:
+          Alpha: 0.5
+          Color:
+            R: 255
+            G: 255
+            B: 127
+          Color Style: Unique
+          Frame: Local
+          Offset: 1.0
+          Scale: 1.0
+          Value: true
+        Position:
+          Alpha: 0.30000001192092896
+          Color:
+            R: 204
+            G: 51
+            B: 204
+          Scale: 1.0
+          Value: true
+        Value: false
+      Enabled: true
+      Keep: 1
+      Name: Odometry (/odometry/global)
+      Position Tolerance: 0.10000000149011612
+      Shape:
+        Alpha: 1.0
+        Axes Length: 1.0
+        Axes Radius: 0.10000000149011612
+        Color:
+          R: 255
+          G: 25
+          B: 0
+        Head Length: 0.30000001192092896
+        Head Radius: 0.10000000149011612
+        Shaft Length: 1.0
+        Shaft Radius: 0.05000000074505806
+        Value: Arrow
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /odometry/global
+      Value: true
+    - Class: rviz_default_plugins/TF
+      Enabled: true
+      Frame Timeout: 15.0
+      Frames:
+        All Enabled: true
+      Marker Scale: 1.0
+      Name: TF
+      Show Arrows: true
+      Show Axes: true
+      Show Names: true
+      Tree:
+        {}
+      Update Interval: 0.0
+      Value: true
+  Enabled: true
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: base_link
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/Interact
+      Hide Inactive: false
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+    - Class: rviz_default_plugins/FocusCamera
+    - Class: rviz_default_plugins/Measure
+      Line color: 128; 128; 0
+    - Class: rviz_default_plugins/SetInitialPose
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /initialpose
+    - Class: rviz_default_plugins/SetGoal
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /goal_pose
+  Transformation:
+    Current:
+      Class: rviz_default_plugins/TF
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/TopDownOrtho
+      Enable Stereo Rendering:
+        Stereo Eye Separation: 0.06
+        Stereo Focal Distance: 1.0
+        Swap Stereo Eyes: false
+        Value: false
+      Invert Z Axis: false
+      Name: Current View
+      Near Clip Distance: 0.009999999776482582
+      Scale: 50
+      Target Frame: <Fixed Frame>
+      Value: TopDownOrtho (rviz_default_plugins)
+      X: 0.0
+      Y: 0.0
+    Saved: ~
+Window Geometry:
+  Displays:
+    collapsed: false
+  Height: 1016
+  Hide Left Dock: false
+  Hide Right Dock: true
+  Selection:
+    collapsed: false
+  Tool Properties:
+    collapsed: false
+  Views:
+    collapsed: true
+  Width: 1920
+  X: 0
+  Y: 27

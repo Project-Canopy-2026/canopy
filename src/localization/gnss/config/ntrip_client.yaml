@@ -1,0 +1,11 @@
+/ntrip_client:
+  ros__parameters:
+  
+    user: 'nkayiti@andrew.cmu.edu'
+    password: ''
+    server: 'rtk2go.com'
+    port: 2101
+    mountpoint: 'cmuairlab01'
+
+    serial_port: 'dev/ttyUSB0'
+    serial_baud: 1125200

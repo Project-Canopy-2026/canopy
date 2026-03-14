@@ -16,7 +16,7 @@ from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from geometry_msgs.msg import Pose, Point
 from nav_msgs.msg import OccupancyGrid, MapMetaData
 from std_msgs.msg import Header
-from steward_msgs.msg import FailedChecks, HealthCheck, SystemwideStatus
+from canopy_msgs.msg import FailedChecks, HealthCheck, SystemwideStatus
 from sensor_msgs.msg import PointCloud2, PointField
 
 # prefix to the names of dummy fields we add to get byte alignment
