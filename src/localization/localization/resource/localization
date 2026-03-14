@@ -1,0 +1,4 @@
+Uses the robot_localization navsat_transform node to transform gnss data into global frame.
+Used robot_localization ekf_localization_node to fuse GNSS, Warthog raw wheeled odometry, and Warhog IMU data.
+
+Launch file also runs gnss_bringup.launch.py

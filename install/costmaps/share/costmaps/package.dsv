@@ -1,0 +1,9 @@
+source;share/costmaps/hook/pythonpath.ps1
+source;share/costmaps/hook/pythonpath.dsv
+source;share/costmaps/hook/pythonpath.sh
+source;share/costmaps/hook/ament_prefix_path.ps1
+source;share/costmaps/hook/ament_prefix_path.dsv
+source;share/costmaps/hook/ament_prefix_path.sh
+source;../../build/costmaps/share/costmaps/hook/pythonpath_develop.ps1
+source;../../build/costmaps/share/costmaps/hook/pythonpath_develop.dsv
+source;../../build/costmaps/share/costmaps/hook/pythonpath_develop.sh

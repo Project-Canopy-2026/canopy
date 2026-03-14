@@ -12,9 +12,9 @@ def generate_launch_description():
             os.path.join(
                 get_package_share_directory('gnss'),
                 'launch',
-                'gps_bringup.launch.py'
+                'gnss_bringup.launch.py'
             )
-    )
+        )
     )
     
     navsat_transform_config = os.path.join(
@@ -26,22 +26,22 @@ def generate_launch_description():
     global_ekf_config = os.path.join(
         get_package_share_directory('localization'),
         'config',
-        'global_ekf.yaml'
+        'ekf_global.yaml'
     )
 
-    navsat_transform = Node{
+    navsat_transform = Node(
         package='robot_localization', 
         executable='navsat_transform_node', 
         name='navsat_transform',
         output='screen',
-        parameters=[parameters_file_path],
+        parameters=[navsat_transform_config],
         remappings=[('imu', 'imu/data'), # input subscribers
                     ('gps/fix', 'gps/navsatfix'),
                     ('odometry/filtered', 'odometry/filtered'),         
                     # output publishers
                     #('gps/filtered', 'gps/filtered'),
                     ('odometry/gps', 'odometry/gps')]
-    }
+    )
 
     global_ekf_filter = Node(
         package='robot_localization', 
@@ -53,9 +53,9 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        gnss_bringup
-        navsat_transform
-        global_ekf_filter        
-])
+        gnss_bringup,
+        navsat_transform,
+        global_ekf_filter
+    ])
 
 # remapping:(internal name, system topic name)
