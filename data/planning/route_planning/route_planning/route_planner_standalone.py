@@ -133,6 +133,7 @@ def calculate_route(points: np.ndarray, use_fast_tsp: bool = True) -> tuple[np.n
         route = np.asarray(fast_tsp.find_tour(distances_matrix.astype(int)))
     else:
         print("Using Ant Colony Optimization...")
+        print(FAST_TSP_AVAILABLE)
         distances_matrix = squareform(distances, force="tomatrix", checks=False)
         np.fill_diagonal(distances_matrix, np.inf)  # Required by AntColony
 
@@ -256,6 +257,7 @@ def visualize_route(
                  fontsize=14)
     ax.legend(loc='upper right')
     ax.set_aspect('equal')
+    ax.invert_yaxis()  # Match image convention: 0,0 at top-left, y increases downward
     ax.grid(True, alpha=0.3)
 
     # Add coordinate ticks
