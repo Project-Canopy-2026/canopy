@@ -20,7 +20,7 @@ canopy/
 │   ├── navigation/         # path planning, obstacle avoidance
 │   ├── planting_control/   # planting mechanism system control
 │   ├── arm_control/        # robot arm control
-│   └── integration/
+│   └── canopy_bringup/     # store the launch file
 ├── tools/                  # dev-only, NOT on final robot
 │   ├── perception/
 │       ├── camera_data_collection/

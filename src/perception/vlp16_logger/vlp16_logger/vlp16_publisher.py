@@ -19,7 +19,7 @@ class VLP16Publisher(Node):
 
         self.sub = self.create_subscription(
             PointCloud2,
-            '/velodyne_points',
+            '/nonground',
             self.callback,
             sensor_qos
         )
