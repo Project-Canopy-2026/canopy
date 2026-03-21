@@ -33,7 +33,15 @@ def generate_launch_description():
                       ('timereference', 'gps/timereference')]
     )
 
+    gps_static_tf = Node(
+        package = "tf2_ros",
+        executable = "static_transform_publisher",
+        name = "base_to_gps_static_tf",
+        arguments = ["0.5", "0", "1", "0", "0", "0", "base_link", "swiftnav-gnss"] # adjust x,y,z!
+    )
+
     return LaunchDescription([
         #rtk_corrections,
-        swiftnav_gnss_driver
+        swiftnav_gnss_driver,
+        gps_static_tf
     ])
