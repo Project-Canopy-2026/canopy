@@ -11,8 +11,10 @@ os.makedirs(save_dir, exist_ok=True)
 # Initialize RealSense streaming pipeline
 pipeline = rs.pipeline()
 config = rs.config()
-config.enable_stream(rs.stream.color, 1280, 720, rs.format.bgr8, 30)
-config.enable_stream(rs.stream.depth, 1280, 720, rs.format.z16, 30)  # enable depth
+""" 1280x720 depth at 30fps often fails over usbipd due to USB
+  bandwidth constraints. Change depth to 640x480"""
+config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
+config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
 pipeline.start(config)
 
 # Create a colorizer to visualize depth
