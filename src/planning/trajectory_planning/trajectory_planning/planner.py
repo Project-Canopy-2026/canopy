@@ -53,6 +53,7 @@ class PlannerNode(Node):
         self.create_subscription(
             GeoPoint, "/planning/goal_pose_geo", self.goalPointGeoCb, 1
         )
+        # TODO: Need to switch to /odometry/gps
         self.create_subscription(Odometry, "/odometry/global", self.odomCb, 1)
         self.create_subscription(Mode, "/planning/current_mode", self.currentModeCb, 1)
         self.create_subscription(Bool, "/behavior/is_planting", self.isPlantingCb, 1)
