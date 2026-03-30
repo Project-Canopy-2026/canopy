@@ -1,1 +1,0 @@
-/ws/build/swiftnav_ros2_driver/rosidl_generator_cpp/swiftnav_ros2_driver/msg/detail/baseline__type_support.hpp

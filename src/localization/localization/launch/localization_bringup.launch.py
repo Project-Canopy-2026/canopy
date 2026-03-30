@@ -29,10 +29,26 @@ def generate_launch_description():
         'ekf_global.yaml'
     )
 
+    # for debugging only!
+    gps_static_tf = Node(
+        package = "tf2_ros",
+        executable = "static_transform_publisher",
+        name = "base_to_gps_static_tf",
+        arguments = [
+            "--x", "0.25",
+            "--y", "0.42",
+            "--z", "1.06",
+            "--yaw", "0",
+            "--pitch", "0",
+            "--roll", "0",
+            "--frame-id", "base_link",
+            "--child-frame-id", "swiftnav-gnss"]
+    )
+
     navsat_transform = Node(
         package='robot_localization', 
         executable='navsat_transform_node', 
-        name='navsat_transform',
+        name='navsat_transform_node',
         output='screen',
         parameters=[navsat_transform_config],
         remappings=[('imu', 'imu/data'), # input subscribers
@@ -49,11 +65,15 @@ def generate_launch_description():
         name='ekf_filter_node_map',
         output='screen',
         parameters=[global_ekf_config],
-        remappings=[('odometry/filtered', 'odometry/global')]
+        remappings=[
+            ('odometry/local', 'odometry/filtered'),
+            ('odometry/filtered', 'odometry/global'),
+        ]
     )
 
     return LaunchDescription([
-        gnss_bringup,
+        #gnss_bringup,
+        gps_static_tf, # for debug only!
         navsat_transform,
         global_ekf_filter
     ])

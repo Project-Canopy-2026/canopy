@@ -1,9 +1,0 @@
-source;share/route_planning/hook/pythonpath.ps1
-source;share/route_planning/hook/pythonpath.dsv
-source;share/route_planning/hook/pythonpath.sh
-source;share/route_planning/hook/ament_prefix_path.ps1
-source;share/route_planning/hook/ament_prefix_path.dsv
-source;share/route_planning/hook/ament_prefix_path.sh
-source;../../build/route_planning/share/route_planning/hook/pythonpath_develop.ps1
-source;../../build/route_planning/share/route_planning/hook/pythonpath_develop.dsv
-source;../../build/route_planning/share/route_planning/hook/pythonpath_develop.sh

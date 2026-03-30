@@ -37,11 +37,19 @@ def generate_launch_description():
         package = "tf2_ros",
         executable = "static_transform_publisher",
         name = "base_to_gps_static_tf",
-        arguments = ["0.5", "0", "1", "0", "0", "0", "base_link", "swiftnav-gnss"] # adjust x,y,z!
+        arguments = [
+            "--x", "0.25",
+            "--y", "0.42",
+            "--z", "1.06",
+            "--yaw", "0",
+            "--pitch", "0",
+            "--roll", "0",
+            "--frame-id", "base_link",
+            "--child-frame-id", "swiftnav-gnss"]
     )
 
     return LaunchDescription([
-        #rtk_corrections,
+        rtk_corrections,
         swiftnav_gnss_driver,
         gps_static_tf
     ])

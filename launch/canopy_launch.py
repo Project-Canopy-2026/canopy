@@ -7,13 +7,13 @@ from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 
 def generate_launch_description():
-    localization_bringup = IncludeLaunchDescription(
+    gnss_bringup = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
                 get_package_share_directory('localization'),
-                'localization',
+                'gnss',
                 'launch',
-                'localization_bringup.launch.py'
+                'gnss_bringup.launch.py'
             )
         )
     )
@@ -21,5 +21,5 @@ def generate_launch_description():
 
 
     return LaunchDescription([
-        localization_bringup
+        gnss_bringup
     ])
