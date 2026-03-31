@@ -5,10 +5,10 @@
   <version>1.0.0</version>
   <description>Nodes to generate Forest Plans, which describe what seedlings to plant and where.</description>
 
-  <maintainer email="alinaw@andrew.cmu.edu">Alina Wang</maintainer>
+  <maintainer email="w@heit.mn">Will Heitman</maintainer>
   <license>MIT</license>
 
-  <depend>canopy_msgs</depend>
+  <depend>steward_msgs</depend>
 
   <export>
     <build_type>ament_python</build_type>

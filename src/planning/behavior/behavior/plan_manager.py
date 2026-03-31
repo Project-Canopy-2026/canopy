@@ -18,7 +18,7 @@ import utm
 # ROS2 message definitions
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from std_msgs.msg import Header, Float32
-from canopy_msgs.msg import (
+from steward_msgs.msg import (
     FailedChecks,
     HealthCheck,
     SystemwideStatus,
@@ -160,9 +160,8 @@ class PlanManager(Node):
         param_desc.type = ParameterType.PARAMETER_DOUBLE_ARRAY
         self.declare_parameter(
             "map_origin_lat_lon_alt_degrees",
-            [40.44132949798969, -79.94451105594635, 293],
+            [40.4431653, -79.9402844, 288.0961589],
         )
-# [40.4431653, -79.9402844, 288.0961589] # steward
 
         param_desc.type = ParameterType.PARAMETER_DOUBLE
         self.declare_parameter(

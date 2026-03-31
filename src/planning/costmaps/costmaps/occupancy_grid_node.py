@@ -16,7 +16,7 @@ from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from geometry_msgs.msg import Pose, Point
 from nav_msgs.msg import OccupancyGrid, MapMetaData
 from std_msgs.msg import Header
-from canopy_msgs.msg import FailedChecks, HealthCheck, SystemwideStatus
+from steward_msgs.msg import FailedChecks, HealthCheck, SystemwideStatus
 from sensor_msgs.msg import PointCloud2, PointField
 
 # prefix to the names of dummy fields we add to get byte alignment
@@ -117,7 +117,7 @@ class OccupancyGridNode(Node):
 
         self.setUpParameters()
 
-        self.create_subscription(PointCloud2, "/vlp16/depth_pcd", self.pcdCb, 1) # changed from /velodyn_points to /vlp16/depth_pcd to match our topic name
+        self.create_subscription(PointCloud2, "/velodyne_points", self.pcdCb, 1)
 
         self.occ_grid_pub = self.create_publisher(OccupancyGrid, "/cost/occupancy", 1)
 
