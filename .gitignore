@@ -220,3 +220,4 @@ __marimo__/
 *.pt
 # *.jpg
 runs/
+ .claude/
