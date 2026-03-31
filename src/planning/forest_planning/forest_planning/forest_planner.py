@@ -2,7 +2,7 @@ import numpy as np
 import rclpy
 from rclpy.node import Node, ParameterDescriptor, ParameterType
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
-from steward_msgs.msg import ForestPlan
+from canopy_msgs.msg import ForestPlan
 from nav_msgs.msg import OccupancyGrid
 from geometry_msgs.msg import Point
 from time import time
