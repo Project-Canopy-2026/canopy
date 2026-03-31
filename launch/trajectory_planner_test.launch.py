@@ -62,7 +62,6 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(
             os.path.join(
                 get_package_share_directory('localization'),
-                'localization',
                 'launch',
                 'localization_bringup.launch.py'
             )
@@ -87,12 +86,12 @@ def generate_launch_description():
 
     return LaunchDescription([
         localization,
-        fsm,
-        plan_manager,
+        #fsm,
+        #plan_manager,
         occupancy_grid,
         cost_map,
-        trajectory_planner,
-        demo_waypoint_follower,
+        #trajectory_planner,
+        #demo_waypoint_follower,
         # rqt,
         # rviz,
     ])

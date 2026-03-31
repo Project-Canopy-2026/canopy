@@ -10,11 +10,7 @@ from rclpy.node import Node
 class ntrip_client(Node):
     def __init__(self):
         
-<<<<<<< HEAD
-        super().__init__('ntripclient')
-=======
         super().__init__('ntrip_client')
->>>>>>> dev/localization/neha
 
         #self.rtcm_topic = '/rtcm'
 

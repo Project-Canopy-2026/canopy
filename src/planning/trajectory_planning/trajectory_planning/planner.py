@@ -67,7 +67,7 @@ class PlannerNode(Node):
             PlantingPlan, "/planning/remaining_plan", self.planCb, 1
         )
 
-        # self.twist_pub = self.create_publisher(Twist, "/cmd_vel", 1)
+        self.twist_pub = self.create_publisher(Twist, "/cmd_vel", 1)
         self.facing_downhill_pub = self.create_publisher(
             Empty, "/behavior/facing_downhill", 1
         )
