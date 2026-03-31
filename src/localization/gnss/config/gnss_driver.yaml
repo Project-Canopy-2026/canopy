@@ -2,7 +2,7 @@
   ros__parameters:
   
     # SwiftNav GNSS Receiver Interface
-    interface: 3 # 1: TCP Client, 2: Serial, 3: File
+    interface: 1 # 1: TCP Client, 2: Serial, 3: File
 
     # TCP Client (interface: 1)
     host_ip: "192.168.0.222"
@@ -15,13 +15,13 @@
     connection_str: "115200|N|8|1|N"
 
     # File (interface: 3)
-    sbp_file: "/Documents/MRSD/Project_Canopy/gnss_tests/logs/open_sky_static_30m-20260220-195646Z.sbp"
+    sbp_file: "src/canopy/gnss_logs/open_sky_static_30m-20260220-195646Z.sbp"
 
     # ROS2 Frame Name
     frame_name: "swiftnav-gnss"
 
     # Topic Publication Time Stamp Source
-    timestamp_source_gnss: True # True: use GNSS receiver reported time (default), False: use current platfrom time
+    timestamp_source_gnss: False #True # True: use GNSS receiver reported time (default), False: use current platfrom time
 
     # RTK Baseline Direction Offsets (Baseline Topic)
     # baseline_dir_offset_deg: 0.0    # [deg], range [-180 to 180]
@@ -35,7 +35,7 @@
       [
         "gpsfix",
         "navsatfix",
-        #"twistwithcovariancestamped",
+        "twistwithcovariancestamped",
         #"baseline",
         "timereference",
         #"imu"

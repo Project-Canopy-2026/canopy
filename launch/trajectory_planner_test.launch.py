@@ -1,5 +1,10 @@
+import os
 from launch import LaunchDescription
 from launch_ros.actions import Node
+from ament_index_python.packages import get_package_share_directory
+
+from launch.actions import IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 
 # MAP_ORIGIN = [40.4431653, -79.9402844, 288.0961589] # steward used this for the Schenley park imagery map origin
 MAP_ORIGIN = [40.44132949798969, -79.94451105594635, 293.0] # try this for the flagstaff hill zoomed in one
@@ -53,6 +58,17 @@ def generate_launch_description():
         parameters=[{"map_origin_lat_lon_alt_degrees": MAP_ORIGIN}],
     )
 
+    localization = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory('localization'),
+                'localization',
+                'launch',
+                'localization_bringup.launch.py'
+            )
+        )
+    )
+
     # rqt lets you inspect topics, plot values, and publish test messages
     # rqt = Node(
     #     package="rqt_gui",
@@ -70,6 +86,7 @@ def generate_launch_description():
     # )
 
     return LaunchDescription([
+        localization,
         fsm,
         plan_manager,
         occupancy_grid,

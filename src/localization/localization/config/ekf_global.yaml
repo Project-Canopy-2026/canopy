@@ -1,0 +1,77 @@
+ekf_filter_node_map:
+  ros__parameters:
+    frequency: 30.0
+    sensor_timeout: 0.1
+    two_d_mode: true
+    transform_time_offset: 0.0
+    transform_timeout: 0.0
+    print_diagnostics: true
+    #debug: false
+    publish_tf: true
+    # for debugging only! 
+    print_diagnostics: true
+    debug: true
+    debug_out_file: /tmp/ekf_debug.txt
+
+    map_frame: map_gps
+    odom_frame: odom
+    base_link_frame: base_link
+    world_frame: map_gps
+
+    use_sim_time: false # only for testing with gnss rosbag
+
+    # config vector format
+    #[X, Y, Z, 
+    # roll, pitch, yaw, 
+    # Vx, Vy, Vz, 
+    # Vroll, Vpitch, Vyaw, 
+    # Ax, Ay, Az]
+
+    # subsribers
+    # odom0: warthog_velocity_controller/odom
+    # odom0_config: [false, false, false,
+    #               false, false, false,
+    #               true,  true,  false,
+    #               false, false, true,
+    #               false, false, false]
+    # odom0_queue_size: 10
+    # odom0_differential: false
+    # odom0_relative: false
+
+    odom0: odometry/local
+    odom0_config: [false, false, false,
+                  false, false, false,
+                  true,  true,  false,
+                  false, false, true,
+                  false, false, false]
+    odom0_queue_size: 10
+    odom0_differential: false
+    odom0_relative: false
+
+    odom1: odometry/gps
+    odom1_config: [true,  true,  false,
+                  false, false, false,
+                  false, false, false,
+                  false, false, false,
+                  false, false, false]
+    odom1_queue_size: 10
+    odom1_differential: false
+    odom1_relative: false
+    odom1_pose_rejection_threshold: 5.0
+
+    # imu0: imu/data
+    # imu0_config: [false, false, false,
+    #               false,  false, false,
+    #               false, false, false,
+    #               false,  false,  true,
+    #               false,  false,  false]
+    # imu0_differential: false
+    # imu0_relative: false
+    # imu0_queue_size: 10
+    # imu0_remove_gravitational_acceleration: true
+
+    use_control: false
+
+    #process_noise_covariance: [0.05, 0.05, 0.06, 0.03, 0.03, 0.06, 0.025, 0.025, 0.04, 0.01, 0.01, 0.02, 0.01, 0.01, 0.015]
+
+    #initial_estimate_covariance: [10.0, 10.0, 1e-9, 1e-9, 1e-9, 0.1, 1.0, 1e-9, 1e-9, 1e-9, 1e-9, 0.1, 1e-9, 1e-9, 1e-9]
