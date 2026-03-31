@@ -117,10 +117,26 @@ class OccupancyGridNode(Node):
 
         self.setUpParameters()
 
-        self.create_subscription(PointCloud2, "/vlp16/depth_pcd", self.pcdCb, 1) # changed from /velodyn_points to /vlp16/depth_pcd to match our topic name
+        self.create_subscription(PointCloud2, "/velodyne_points", self.pcdCb, 1)
 
         self.occ_grid_pub = self.create_publisher(OccupancyGrid, "/cost/occupancy", 1)
 
+        # GPS-only mode: no LiDAR available, publish a free grid instead.
+        # Risk: robot won't avoid any real obstacles.
+    #     self.timer = self.create_timer(0.1, self.publish_free_grid)
+
+    # def publish_free_grid(self):
+    #     grid = OccupancyGrid()
+    #     grid.header.stamp = self.get_clock().now().to_msg()
+    #     grid.header.frame_id = "base_link"
+    #     grid.info.resolution = 0.2
+    #     grid.info.width = 100
+    #     grid.info.height = 100
+    #     grid.info.origin.position.x = -8.0  # -40px * 0.2m
+    #     grid.info.origin.position.y = -10.0  # -50px * 0.2m
+    #     grid.data = [0] * (100 * 100)  # all free
+    #     self.occ_grid_pub.publish(grid)
+    
     def pcdCb(self, msg: PointCloud2):
         pts = pointcloud2_to_array(msg)
 
