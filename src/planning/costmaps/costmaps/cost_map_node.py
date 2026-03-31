@@ -416,7 +416,7 @@ class CostMapNode(Node):
         param_desc.type = ParameterType.PARAMETER_DOUBLE_ARRAY
         self.declare_parameter(
             "map_origin_lat_lon_alt_degrees",
-            [40.44132949798969, -79.94451105594635, 293],
+            [40.44132949798969, -79.94451105594635, 293.0],
         )
 # [40.4431653, -79.9402844, 288.0961589] # steward
 
