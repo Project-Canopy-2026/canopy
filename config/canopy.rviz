@@ -110,7 +110,7 @@ Visualization Manager:
         Value: false
       Enabled: true
       Keep: 1
-      Name: Odometry (/odometry/global)
+      Name: Odometry (/odometry/gps)
       Position Tolerance: 0.10000000149011612
       Shape:
         Alpha: 1.0
@@ -131,7 +131,7 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /odometry/global
+        Value: /odometry/gps
       Value: true
     - Class: rviz_default_plugins/TF
       Enabled: true

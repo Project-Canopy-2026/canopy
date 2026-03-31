@@ -49,7 +49,7 @@ def generate_launch_description():
         name='ekf_filter_node_map',
         output='screen',
         parameters=[global_ekf_config],
-        remappings=[('odometry/filtered', 'odometry/global')]
+        remappings=[('odometry/filtered', 'odometry/gps')]
     )
 
     return LaunchDescription([

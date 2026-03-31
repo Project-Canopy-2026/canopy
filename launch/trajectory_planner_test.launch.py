@@ -1,7 +1,8 @@
 from launch import LaunchDescription
 from launch_ros.actions import Node
 
-MAP_ORIGIN = [40.4431653, -79.9402844, 288.0961589]
+# MAP_ORIGIN = [40.4431653, -79.9402844, 288.0961589] # steward used this for the Schenley park imagery map origin
+MAP_ORIGIN = [40.44132949798969, -79.94451105594635, 293] # try this for the flagstaff hill zoomed in one
 
 
 def generate_launch_description():
@@ -53,20 +54,20 @@ def generate_launch_description():
     )
 
     # rqt lets you inspect topics, plot values, and publish test messages
-    rqt = Node(
-        package="rqt_gui",
-        executable="rqt_gui",
-        name="rqt",
-        output="screen",
-    )
+    # rqt = Node(
+    #     package="rqt_gui",
+    #     executable="rqt_gui",
+    #     name="rqt",
+    #     output="screen",
+    # )
 
-    rviz = Node(
-        package="rviz2",
-        executable="rviz2",
-        name="rviz2",
-        output="screen",
-        arguments=["-d", "/home/ronald/Documents/canopy/config/canopy.rviz"],
-    )
+    # rviz = Node(
+    #     package="rviz2",
+    #     executable="rviz2",
+    #     name="rviz2",
+    #     output="screen",
+    #     arguments=["-d", "/home/ronald/Documents/canopy/config/canopy.rviz"],
+    # )
 
     return LaunchDescription([
         fsm,
@@ -75,6 +76,6 @@ def generate_launch_description():
         cost_map,
         trajectory_planner,
         demo_waypoint_follower,
-        rqt,
-        rviz,
+        # rqt,
+        # rviz,
     ])
