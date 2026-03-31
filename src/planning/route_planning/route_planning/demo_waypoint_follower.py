@@ -16,7 +16,7 @@ class DemoWaypointFollower(Node):
         self.setUpParameters()
 
         self.create_subscription(GeoPoint, "/planning/goal_pose_geo", self.waypointCb, 1)
-        self.create_subscription(Odometry, "/odometry/global", self.odomCb, 1)
+        self.create_subscription(Odometry, "/odometry/gps", self.odomCb, 1)
 
         self.twist_pub = self.create_publisher(Twist, "/cmd_vel", 1)
 
@@ -86,8 +86,9 @@ class DemoWaypointFollower(Node):
         param_desc.type = ParameterType.PARAMETER_DOUBLE_ARRAY
         self.declare_parameter(
             "map_origin_lat_lon_alt_degrees",
-            [40.4431653, -79.9402844, 288.0961589],
+            [40.44132949798969, -79.94451105594635, 293],
         )
+# [40.4431653, -79.9402844, 288.0961589] # steward
         lat0, lon0, _ = self.get_parameter("map_origin_lat_lon_alt_degrees").value
         self._map_origin_utm_x, self._map_origin_utm_y, _, __ = utm.from_latlon(lat0, lon0)
 

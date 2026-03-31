@@ -150,18 +150,21 @@ class TestPlannerNode(unittest.TestCase):
 
     def test_lat_lon_origin_maps_to_zero(self):
         # The origin itself should map to (0, 0)
-        origin_lat, origin_lon = 40.4431653, -79.9402844
+        # origin_lat, origin_lon = 40.4431653, -79.9402844 # steward
+        origin_lat, origin_lon = 40.44132949798969, -79.94451105594635
         x, y = self.node.latLonToMap(origin_lat, origin_lon)
         self.assertAlmostEqual(x, 0.0, places=2)
         self.assertAlmostEqual(y, 0.0, places=2)
 
     def test_lat_lon_north_is_positive_y(self):
-        origin_lat, origin_lon = 40.4431653, -79.9402844
+        # origin_lat, origin_lon = 40.4431653, -79.9402844 # steward
+        origin_lat, origin_lon = 40.44132949798969, -79.94451105594635
         _, y = self.node.latLonToMap(origin_lat + 0.001, origin_lon)
         self.assertGreater(y, 0.0)
 
     def test_lat_lon_east_is_positive_x(self):
-        origin_lat, origin_lon = 40.4431653, -79.9402844
+        # origin_lat, origin_lon = 40.4431653, -79.9402844 # steward
+        origin_lat, origin_lon = 40.44132949798969, -79.94451105594635
         x, _ = self.node.latLonToMap(origin_lat, origin_lon + 0.001)
         self.assertGreater(x, 0.0)
 
