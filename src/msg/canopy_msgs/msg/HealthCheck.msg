@@ -1,0 +1,3 @@
+string code
+string message
+canopy_msgs/SystemwideStatus trigger_status
