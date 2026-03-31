@@ -5,7 +5,7 @@ from route_planning.ant_colony import AntColony
 from rclpy.node import Node, ParameterDescriptor, ParameterType
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from visualization_msgs.msg import Marker, MarkerArray
-from steward_msgs.msg import Route, ForestPlan
+from canopy_msgs.msg import Route, ForestPlan
 from geometry_msgs.msg import Point, TransformStamped
 from time import time
 from tqdm import tqdm, trange

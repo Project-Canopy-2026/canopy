@@ -15,6 +15,8 @@ setup(
             glob('launch/*.py')),
         (os.path.join('share', 'canopy_bringup', 'rviz'),
             glob('rviz/*.rviz')),
+        (os.path.join('share', 'canopy_bringup', 'config'),
+            glob('config/*.yaml')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,

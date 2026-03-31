@@ -28,7 +28,7 @@ from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from geographic_msgs.msg import GeoPoint
 from geometry_msgs.msg import Pose, Point, Twist, PoseStamped, PointStamped
 from nav_msgs.msg import OccupancyGrid, MapMetaData, Path
-from steward_msgs.msg import (
+from canopy_msgs.msg import (
     FailedChecks,
     HealthCheck,
     SystemwideStatus,
