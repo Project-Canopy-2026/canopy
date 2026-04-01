@@ -10,6 +10,7 @@ import message_filters
 import cv2
 import numpy as np
 from std_msgs.msg import Bool
+from collections import deque
 
 from tf2_ros import Buffer, TransformListener
 import tf2_geometry_msgs
@@ -39,6 +40,9 @@ class PotDetector(Node):
         
         self.model = YOLO('./src/perception/pot_detector/model/yolo11n/best.pt') # TODO: Change this to the correct path on Jetson
 
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+
         # Camera intrinsic parameters
         self.fx = None
         self.fy = None
@@ -48,8 +52,10 @@ class PotDetector(Node):
         self.latest_rgb_msg = None
         self.latest_depth_msg = None
 
-        self.tf_buffer = Buffer()
-        self.tf_listener = TransformListener(self.tf_buffer, self)
+        self.center_x_window = deque(maxlen=5)
+        self.center_y_window = deque(maxlen=5)
+
+        self.max_point_dist = 5 # units?
 
 
     def image_callback(self, rgb_msg: Image, depth_msg: Image):
@@ -87,12 +93,36 @@ class PotDetector(Node):
         conf = float(boxes.conf[best_idx].cpu())
         cls = int(boxes.cls[best_idx].cpu())
 
+        # if low confidence skip
+
+        # select closest bounding box if multiple
+
         # Publish bounding box (as Float32MultiArray: [x1, y1, x2, y2, confidence])
-        bbox_msg = Float32MultiArray()To prepare for your pre-employment screening, please research your own history and gather your personal information. This may include previous addresses, names of employers, employment dates, and job titles. This will allow you to provide complete and accurate information to ESS.
-        bbox_msg.data = [x1, y1, x2, y2, conf]
+        bbox_msg = Float32MultiArray()
         self.bbox_pub.publish(bbox_msg)
 
-        center_3d_cam = self.get_center_3d_projection(x1, y1, x2, y2)
+        # Compute pot center (for simplicity, take bbox center)
+        center_x = (x1 + x2) / 2.0
+        center_y = (y1 + y2) / 2.0
+        self.get_logger().info(f'Detected pot. Pot center at pixel ({cx}, {cy}) with confidence {conf:.2f}')
+
+        # add to rolling window
+        self.center_x_window.append(center_x)
+        self.center_y_window.append(center_y)
+
+        # get stable average center point across frames and reject if far from average
+        stable_result = self.get_stable_center()
+        if stable_result is None:
+            self.get_logger().warn(f"center is too far from average across {self.max_point_dist} frames. Rejecting detection.")
+            return
+        else:
+            stable_center_x, stable_center_y = stable_result
+
+        # Get depth at the center pixel
+        stable_depth_center = float(depth_image[int(stable_center_y), int(stable_center_x)])
+
+        # project 3D
+        center_3d_cam = self.project_3d(stable_center_x, stable_center_y, stable_depth_center)
 
         # transform the 3d projection from camera -> arm_base
         try:
@@ -120,32 +150,44 @@ class PotDetector(Node):
         self.vis_pub.publish(self.bridge.cv2_to_imgmsg(vis_image, encoding='bgr8'))
 
 
-    def get_center_3d_projection(self, x1, x2, y1, y2):
-
-        # Compute pot center (for simplicity, take bbox center)
-        center_x = (x1 + x2) / 2.0
-        center_y = (y1 + y2) / 2.0
-        self.get_logger().info(f'Detected pot. Pot center at pixel ({cx}, {cy}) with confidence {conf:.2f}')
-        
-        # Get depth at the pot center pixel
-        depth_center = float(depth_image[int(center_y), int(center_x)])
+    def project_3d(self, x, y, depth):
 
         # 3D projection
-        center_X_3d = (center_x - self.cx) * depth_center  / self.fx
-        center_Y_3d = (center_y - self.cy) * depth_center  / self.fy
-        center_Z_3d = depth_center
+        X_3d = (x - self.cx) * depth  / self.fx
+        Y_3d = (y - self.cy) * depth  / self.fy
+        Z_3d = depth
 
         # add frame and time to 3D point        
         point_3d_cam = PointStamped()
         point_3d_cam.header.stamp = self.latest_depth_msg.header.stamp
         point_3d_cam.header.frame_id = self.latest_depth_msg.header.frame_id
 
-        point_3d_cam.point.x = center_X_3d
-        point_3d_cam.point.y = center_Y_3d
-        point_3d_cam.point.z = center_Z_3d
+        point_3d_cam.point.x = X_3d
+        point_3d_cam.point.y = Y_3d
+        point_3d_cam.point.z = Z_3d
 
         return point_3d_cam
 
+
+    def get_stable_center(self, x, y)
+        # reject if too far from previous average
+        # return average across window
+
+        prev_x_avg = np.average(list(self.center_x_window)[:-1])
+        x_dist = np.linalg.norm(x - prev_x_avg)
+        if x_dist > self.max_point_dist:
+            self.center_x_window.pop()
+            return None
+        stable_x_avg = np.average(self.center_x_window)
+
+        prev_y_avg = np.average(list(self.center_y_window)[:-1])
+        y_dist = np.linalg.norm(y - prev_y_avg)
+        if y_dist > self.max_point_dist:
+            self.center_y_window.pop()
+            return None
+        stable_y_avg = np.average(self.center_y_window)
+
+        return stable_x_avg, stable_y_avg
 
     def depth_intrinsics_callback(self, msg):
         # K: [fx, 0, cx, 0, fy, cy, 0, 0, 1]
