@@ -11,18 +11,22 @@ import cv2
 import numpy as np
 from std_msgs.msg import Bool
 
-class SeedlingDetector(Node):
+from tf2_ros import Buffer, TransformListener
+import tf2_geometry_msgs
+from geometry_msgs.msg import PointStamped
+
+class PotDetector(Node):
     def __init__(self):
-        super().__init__('seedling_detector')
+        super().__init__('pot_detector')
 
         # ROS2 publishers
-        self.bbox_pub = self.create_publisher(Float32MultiArray, '/seedling/pot_bbox', 10)
-        self.grasp_pub = self.create_publisher(PoseStamped, '/seedling/grasp_point', 10)
-        self.vis_pub = self.create_publisher(Image, '/seedling/annotated_image', 10)
+        self.bbox_pub = self.create_publisher(Float32MultiArray, '/pot/pot_bbox', 10)
+        self.pot_pose_pub = self.create_publisher(PoseStamped, '/pot/center_pose', 10)
+        self.vis_pub = self.create_publisher(Image, '/pot/annotated_image', 10)
 
         # ROS2 subscribers
         depth_camera_info = self.create_subscription(sensor_msgs/CameraInfo, '/camera/camera/aligned_depth_to_color/camera_info', self.depth_intrinsics_callback, 10)        
-        pre_grasp_ready = self.create_subscription(Bool, '/behavior/pre_grasp_ready', self.pot_detection_callback, 10)
+        enable_pot_detection = self.create_subscription(Bool, '/behavior/enable_pot_detection', self.pot_detection_callback, 10)
 
         rgb_sub = message_filters.Subscriber(self, Image, '/camera/color/image_raw')
         depth_sub = message_filters.Subscriber(self, Image, '/camera/camera/aligned_depth_to_color/image_raw')
@@ -43,6 +47,9 @@ class SeedlingDetector(Node):
 
         self.latest_rgb_msg = None
         self.latest_depth_msg = None
+
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
 
 
     def image_callback(self, rgb_msg: Image, depth_msg: Image):
@@ -85,6 +92,36 @@ class SeedlingDetector(Node):
         bbox_msg.data = [x1, y1, x2, y2, conf]
         self.bbox_pub.publish(bbox_msg)
 
+        center_3d_cam = self.get_center_3d_projection(x1, y1, x2, y2)
+
+        # transform the 3d projection from camera -> arm_base
+        try:
+            center_3d_base = self.tf_buffer.transform(
+                center_3d_cam,
+                'arm_base',
+                timeout=rclpy.duration.Duration(seconds=0.2)
+            )
+        except Exception as e:
+            self.get_logger().warn(f"Failed to transform point to link_base: {e}")
+            return
+
+        # get grasp pose
+        #grasp_pose = calc_grasp_pose(center_3d_base)
+
+        # publish pot center pose
+        self.pot_pose_pub.publish(center_3d_base)
+
+        # Publish annotated image for visualization
+        vis_image = cv_image.copy()
+        cv2.rectangle(vis_image, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
+        cv2.putText(vis_image, f'{conf:.2f}', (int(x1), int(y1) - 5),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+        cv2.circle(vis_image, (int(cx), int(cy)), 4, (0, 0, 255), -1)
+        self.vis_pub.publish(self.bridge.cv2_to_imgmsg(vis_image, encoding='bgr8'))
+
+
+    def get_center_3d_projection(self, x1, x2, y1, y2):
+
         # Compute pot center (for simplicity, take bbox center)
         center_x = (x1 + x2) / 2.0
         center_y = (y1 + y2) / 2.0
@@ -94,20 +131,20 @@ class SeedlingDetector(Node):
         depth_center = float(depth_image[int(center_y), int(center_x)])
 
         # 3D projection
-        # will move to separate function later to clean up
+        center_X_3d = (center_x - self.cx) * depth_center  / self.fx
+        center_Y_3d = (center_y - self.cy) * depth_center  / self.fy
+        center_Z_3d = depth_center
 
+        # add frame and time to 3D point        
+        point_3d_cam = PointStamped()
+        point_3d_cam.header.stamp = self.latest_depth_msg.header.stamp
+        point_3d_cam.header.frame_id = self.latest_depth_msg.header.frame_id
 
+        point_3d_cam.point.x = center_X_3d
+        point_3d_cam.point.y = center_Y_3d
+        point_3d_cam.point.z = center_Z_3d
 
-        # Convert image coordinates to world coordinates (placeholder)
-        # grasp_pose = cal_grasp_pose(cx, cy, depth)
-
-        # Publish annotated image for visualization
-        vis_image = cv_image.copy()
-        cv2.rectangle(vis_image, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
-        cv2.putText(vis_image, f'{conf:.2f}', (int(x1), int(y1) - 5),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-        cv2.circle(vis_image, (int(cx), int(cy)), 4, (0, 0, 255), -1)
-        self.vis_pub.publish(self.bridge.cv2_to_imgmsg(vis_image, encoding='bgr8'))
+        return point_3d_cam
 
 
     def depth_intrinsics_callback(self, msg):
@@ -119,28 +156,29 @@ class SeedlingDetector(Node):
         self.cy = msg.K[5]
 
     
-    def cal_grasp_pose(self, cx, cy):
-        grasp_pose = PoseStamped()
-        # Placeholder for actual grasp pose calculation lca szogic
-        # Find the 3D point (cx, cy) pixel corresponding to in the camera frame -> robot frame -> then convert to world frame?
-        grasp_pose = PoseStamped()
-        grasp_pose.header.stamp = self.get_clock().now().to_msg()
-        grasp_pose.header.frame_id = 'camera_frame'
+    # def calc_grasp_pose(self, center_point):
+    #     # center point is pose stamped
+    #     grasp_pose = center_point
 
-        grasp_pose.pose.position.x = ...
-        grasp_pose.pose.position.y = ...
-        grasp_pose.pose.position.z = ...
+        
+    #     grasp_pose.header.stamp = self.get_clock().now().to_msg()
+    #     grasp_pose.header.frame_id = 'camera_frame'
 
-        grasp_pose.pose.orientation.x = ...
-        grasp_pose.pose.orientation.y = ...
-        grasp_pose.pose.orientation.z = ...
-        grasp_pose.pose.orientation.w = ...
+    #     grasp_pose.pose.position.x = ...
+    #     grasp_pose.pose.position.y = ...
+    #     grasp_pose.pose.position.z = ...
 
-        return grasp_pose
+    #     grasp_pose.pose.orientation.x = ...
+    #     grasp_pose.pose.orientation.y = ...
+    #     grasp_pose.pose.orientation.z = ...
+    #     grasp_pose.pose.orientation.w = ...
+
+    #     return grasp_pose
     
+
 def main(args=None):
     rclpy.init(args=args)
-    node = SeedlingDetector()
+    node = PotDetector()
     rclpy.spin(node)
     node.destroy_node()
     rclpy.shutdown()
