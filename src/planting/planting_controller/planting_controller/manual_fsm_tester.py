@@ -52,15 +52,15 @@ _STATE_SEQ = [
 # None = no Arduino command (LINAK-only state or wait state).
 _ENTRY_CMD = {
     State.IDLE:           None,
-    State.AUGER_SPIN_UP:  'bldc,in,50',
+    State.AUGER_SPIN_UP:  'bldc,in,75',
     State.DRILLING_DOWN:  None,           # LINAK vertical down
     State.DRILLING_DWELL: None,           # dwell — no new command
-    State.AUGER_RETRACT:  'bldc,out,50',  # spin out briefly, then stop
-    State.SHIFT_TO_CHUTE: ('bldc,stop','stepper,left,100,3'),
+    State.AUGER_RETRACT:  'bldc,out,75',  # spin out briefly, then stop
+    State.SHIFT_TO_CHUTE: ('bldc,stop','stepper,left,100,4'),
     State.WAIT_SEEDLING:  None,           # operator places seedling
     State.CHUTE_DOWN:     None,           # LINAK vertical down
     State.CHUTE_RETRACT:  None,           # LINAK vertical up
-    State.SHIFT_TO_AUGER: 'stepper,right,100,3',
+    State.SHIFT_TO_AUGER: 'stepper,right,100,4',
     State.COMPLETE:       'bldc,stop',
 }
 

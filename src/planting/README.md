@@ -1,13 +1,13 @@
 ## Planting Motion Sequence
 
-0. The robot is in place and receives a ROS2 topic `do_planting`. Then start the planting sequence below.
-1. The BLDC spins the auger at 75 RPM, and LINAK_1 starts driving the auger+BLDC assembly 15 cm down into the soil at a fixed speed. Then stay and let the BLDC + auger spin for 10 seconds to complete the drilling.
-2. Spin the BLDC the other way and start raising LINAK_1 to pull the auger back up. Once the assembly returns to its initial position, go to the next step.
-3. Stepper motor drives the assembly horizontally at 100 RPM for 5 seconds (or similar).
-4. LINAK_2 runs for a fixed duration at a fixed speed to drive the chute down into the ground.
-5. Wait for a ROS2 topic signal `seedling_dropped`.
-6. LINAK_2 retracts and moves the chute back up to original position.
-7. The stepper motor moves in the other direction to return the entire assembly to its initial position.
+0. Robot is in place and receives `do_planting` on a ROS2 topic.
+1. BLDC spins the auger at 75 RPM while LINAK_1 drives the auger+BLDC assembly 15 cm into the soil. Hold for 10 seconds.
+2. BLDC reverses and LINAK_1 retracts the assembly back to its initial position.
+3. Stepper motor drives the assembly horizontally at 100 RPM for 5 seconds.
+4. Wait for `seedling_dropped` topic signal.
+5. LINAK_2 drives the chute down into the ground.
+6. LINAK_2 retracts the chute.
+7. Stepper motor returns the assembly to its initial position.
 
 
 ## Repo Structure
@@ -34,24 +34,13 @@ src/planting/
 ```
 
 
-## Communication Between ROS2 and Arduino
-# if there is issue with dev/ttyUSB , run this bash command
-```bash 
-ls /dev/ttyACM* /dev/ttyUSB*
-```
+## Communication: ROS2 ↔ Arduino
 
-The `serial_bridge` node forwards ROS2 string messages to the Arduino over serial and publishes replies back to ROS2.
-
-Arduino serial setup:
-```cpp
-void setup() {
-    Serial.begin(115200);   // must match Python side
-}
-```
+`serial_bridge` forwards `/arduino_cmd` string messages to the Arduino over serial and publishes replies to `/arduino_status`. A background thread handles `readline()` so it doesn't block the ROS2 spin loop.
 
 ### Command Protocol
 
-Commands are newline-terminated comma-delimited strings:
+Commands are newline-terminated, comma-delimited strings:
 
 | Command | Effect |
 |---|---|
@@ -63,95 +52,78 @@ Commands are newline-terminated comma-delimited strings:
 | `STEPPER,STOP` | Stop stepper immediately |
 
 Arduino replies:
-- `ACK:<cmd>` — command received and dispatched
-- `DONE:STEPPER` — timed stepper move completed
+- `ACK:<cmd>` — command received
+- `DONE:STEPPER` — timed move completed
 - `ERR:<reason>` — unknown or malformed command
 
-### Data Flow
 
-```
-FSM Node                    Serial Bridge Node            Arduino UNO R3
-   │                               │                            │
-   │  pub /arduino_cmd             │                            │
-   │  "BLDC,FWD,75"  ────────────► │  ser.write("BLDC,FWD,75\n")──────────► │
-   │                               │                            │  (executes)
-   │                               │  ◄── readline() ─────────  │
-   │  ◄─────────────────────────── │  pub /arduino_status       │ "ACK:BLDC\n"
-   │  sub /arduino_status          │  "ACK:BLDC"                │
-   │  → FSM transitions state      │                            │
+## Running the Manual Test
+
+### Step 1 — Find and fix the serial port
+
+Arduino Uno R3 boards typically show up as `/dev/ttyACM0`, not `/dev/ttyUSB0`. Check what's available:
+
+```bash
+ls /dev/ttyACM* /dev/ttyUSB*
 ```
 
-### Why a Background Thread for Reading?
+If the port is not `/dev/ttyUSB0` (e.g. it's `/dev/ttyACM0`), update the port in `planting_bringup.launch.py` before building.
 
-The ROS2 spin loop and `serial.readline()` are both **blocking** — they'd deadlock on the same thread. The fix:
+If you get a **Permission denied** error on the port, add your user to the `dialout` group:
 
+```bash
+sudo usermod -aG dialout $USER
+# then log out and back in, or run:
+newgrp dialout
 ```
-Main thread:   rclpy.spin()   ← handles ROS2 callbacks (incoming /arduino_cmd)
-Read thread:   readline()     ← waits for bytes from Arduino
+
+### Step 2 — Flash the Arduino
+
+Open `src/planting/planting_arduino/planting_arduino.ino` in the Arduino IDE and upload it to the board (baud rate: 115200).
+
+### Step 3 — Build and run
+
+```bash
+# Source ROS2
+source /opt/ros/humble/setup.bash
+
+# Build (from workspace root)
+cd ~/Documents/canopy
+colcon build --packages-select planting_controller
+
+# Source the workspace overlay
+source install/setup.bash
 ```
 
+Run each node in a **separate terminal** (source the overlay in each one first):
 
+**Terminal 1 — serial bridge:**
+```bash
+source /opt/ros/humble/setup.bash && source install/setup.bash
+ros2 run planting_controller serial_bridge
+```
 
-  Step 1 — Flash the Arduino
+**Terminal 2 — manual FSM tester:**
+```bash
+source /opt/ros/humble/setup.bash && source install/setup.bash
+ros2 run planting_controller manual_fsm_tester
+```
 
-  Open src/planting/planting_arduino/planting_arduino.ino in the Arduino IDE and upload it to the board. It expects:
-  - USB connection on /dev/ttyUSB0
-  - Baud rate: 115200
+The tester must run in its own terminal so the interactive `>` prompt can register commands like `step`, `help`, etc.
 
-  Verify the port with:
-  ls /dev/ttyUSB*
+### Step 4 — Use the CLI
 
-  If it's a different port (e.g. /dev/ttyUSB1), update planting_bringup.launch.py accordingly before building.
+Once launched, you'll get a `>` prompt:
 
-  ---
-  Step 2 — Source ROS2
+| Input | Effect |
+|---|---|
+| `step` | Advance FSM one state |
+| `reset` | Return to IDLE |
+| `state` | Print current FSM state |
+| `BLDC,FWD,50` | Spin auger CW at 50 RPM |
+| `BLDC,STOP` | Stop auger |
+| `STEPPER,CW,100,3000` | Move stepper CW at 100 RPM for 3 seconds |
+| `help` | Show all commands |
+| `quit` | Shutdown |
 
-  source /opt/ros/humble/setup.bash
-
-  ---
-  Step 3 — Build the package
-
-  From the workspace root (/home/alina/Documents/canopy):
-  colcon build --packages-select planting_controller
-
-  ---
-  Step 4 — Source the workspace overlay
-
-  source install/setup.bash
-
-  ---
-  Step 5 — Launch
-
-  ros2 launch planting_controller planting_bringup.launch.py
-
-  This starts two nodes:
-  - serial_bridge — opens /dev/ttyUSB0 at 115200 baud, bridges /arduino_cmd → serial and serial → /arduino_status
-  - manual_fsm_tester — interactive CLI that publishes to /arduino_cmd and prints /arduino_status responses
-
-  ---
-  Step 6 — Use the CLI
-
-  Once launched, you'll get a > prompt. Commands:
-
-  ┌──────────────────┬──────────────────────────────────────────────────┐
-  │      Input       │                      Effect                      │
-  ├──────────────────┼──────────────────────────────────────────────────┤
-  │ step             │ Advance FSM one state, sends default Arduino cmd │
-  ├──────────────────┼──────────────────────────────────────────────────┤
-  │ reset            │ Return to IDLE                                   │
-  ├──────────────────┼──────────────────────────────────────────────────┤
-  │ state            │ Print current FSM state                          │
-  ├──────────────────┼──────────────────────────────────────────────────┤
-  │ BLDC,IN,50       │ Raw command — spin auger CW at 50 RPM            │
-  ├──────────────────┼──────────────────────────────────────────────────┤
-  │ BLDC,STOP        │ Stop auger                                       │
-  ├──────────────────┼──────────────────────────────────────────────────┤
-  │ STEPPER,CW,100,3 │ Move stepper CW at 100 RPM for 3 seconds         │
-  ├──────────────────┼──────────────────────────────────────────────────┤
-  │ help             │ Show all commands                                │
-  ├──────────────────┼──────────────────────────────────────────────────┤
-  │ quit             │ Shutdown                                         │
-  └──────────────────┴──────────────────────────────────────────────────┘
-
-  Arduino replies (ACK:, DONE:STEPPER, ERR:) will print as [ARDUINO] ....                                                                                   
-  
+Arduino replies print as `[ARDUINO] ...`.
