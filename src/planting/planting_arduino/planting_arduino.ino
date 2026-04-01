@@ -5,14 +5,14 @@
 //  BLDC datasheet:    https://www.omc-stepperonline.com/digital-brushless-dc-motor-driver-24-48vdc-max-30a-500w-bld-530s
 //  Stepper datasheet: https://www.omc-stepperonline.com/icl-series-nema-23-integrated-closed-loop-stepper-motor-3-1nm-439oz-in-20-50vdc-w-14-bit-encoder-icld57-31
 //
-//  Command protocol (newline-terminated strings):
-//    "BLDC,IN,<rpm>"              → bldc_spin("IN", rpm) *IN is CW in auger perspective*
-//    "BLDC,OUT,<rpm>"              → bldc_spin("OUT", rpm)
-//    "BLDC,STOP"                   → bldc_stop()
-// CW is mapped to left
-//    "STEPPER,CW,<rpm>,<s>"        → stepper_move("LEFT",  rpm, s*1000)
-//    "STEPPER,CCW,<rpm>,<s>"       → stepper_move("RIGHT", rpm, s*1000)
-//    "STEPPER,STOP"                → stepper_stop()
+//  Command protocol (newline-terminated strings, case-insensitive):
+//    "bldc,in,<rpm>"              → bldc_spin("in", rpm)  *in = CW in auger perspective*
+//    "bldc,out,<rpm>"             → bldc_spin("out", rpm)
+//    "bldc,stop"                  → bldc_stop()
+//    "stepper,left,<rpm>,<s>"     → stepper_move("left",  rpm, s*1000)
+//    "stepper,right,<rpm>,<s>"    → stepper_move("right", rpm, s*1000)
+//    "stepper,stop"               → stepper_stop()
+//    "stop"                       → bldc_stop() + stepper_stop() immediately
 //
 //  Replies:
 //    "ACK:<cmd>"    – command received and dispatched
@@ -77,7 +77,7 @@ void send_error(String reason) { Serial.println("ERR:" + reason); }
 // ============================================================
 void bldc_spin(String direction, int rpm)
 {
-    digitalWrite(FR, (direction == "IN") ? LOW : HIGH);
+    digitalWrite(FR, (direction == "in") ? LOW : HIGH);
     delayMicroseconds(5); // wait 5 µs DIR-before-PUL gap
 
     int constrainedRPM = constrain(rpm, 0, BLDC_RATED_RPM);
@@ -94,12 +94,11 @@ void bldc_stop()
 // ============================================================
 
 // Starts a non-blocking timed stepper move.
-//   direction "CW"  → HIGH on DIR
-//   direction "CCW" → LOW  on DIR
-// FIXME: need to change CW and CCW to left and right
+//   direction "left"  → HIGH on DIR
+//   direction "right" → LOW  on DIR
 void stepper_move(String direction, int rpm, unsigned long duration_ms)
 {
-    digitalWrite(DIR, (direction == "CW") ? HIGH : LOW);
+    digitalWrite(DIR, (direction == "left") ? HIGH : LOW);
     delayMicroseconds(5); // wait 5 µs before the first PUL edge (datasheet)
 
     int constrainedRPM = constrain(rpm, 0, 150);
@@ -140,6 +139,8 @@ bool stepper_check_done()
 // appropriate motor function, then sends ACK immediately.
 void handle_command(String cmd)
 {
+    cmd.toLowerCase();
+
     // Tokenise on commas into a small fixed array
     String tokens[5];
     int count = 0;
@@ -154,6 +155,15 @@ void handle_command(String cmd)
         }
     }
 
+    // Panic stop — halt all motors immediately, no further parsing needed
+    if (tokens[0] == "stop")
+    {
+        bldc_stop();
+        stepper_stop();
+        send_ack("stop");
+        return;
+    }
+
     if (count < 2)
     {
         send_error("INCORRECT FORMAT:" + cmd);
@@ -163,37 +173,37 @@ void handle_command(String cmd)
     String motor = tokens[0];
     String action = tokens[1];
 
-    if (motor == "BLDC")
+    if (motor == "bldc")
     {
-        if ((action == "IN" || action == "OUT") && count >= 3)
+        if ((action == "in" || action == "out") && count >= 3)
         {
             int rpm = tokens[2].toInt();
             bldc_spin(action, rpm);
-            send_ack("BLDC," + action);
+            send_ack("bldc," + action);
         }
-        else if (action == "STOP")
+        else if (action == "stop")
         {
             bldc_stop();
-            send_ack("BLDC,STOP");
+            send_ack("bldc,stop");
         }
         else
         {
             send_error("UNKNOWN_BLDC_CMD:" + action);
         }
     }
-    else if (motor == "STEPPER")
+    else if (motor == "stepper")
     {
-        if ((action == "CW" || action == "CCW") && count >= 4)
+        if ((action == "left" || action == "right") && count >= 4)
         {
             int rpm = tokens[2].toInt();
             unsigned long dur = (unsigned long)tokens[3].toInt() * 1000UL; // s → ms
             stepper_move(action, rpm, dur);
-            send_ack("STEPPER," + action);
+            send_ack("stepper," + action);
         }
-        else if (action == "STOP")
+        else if (action == "stop")
         {
             stepper_stop();
-            send_ack("STEPPER,STOP");
+            send_ack("stepper,stop");
         }
         else
         {

@@ -11,7 +11,7 @@ def generate_launch_description():
             name='serial_bridge',
             output='screen',
             parameters=[{
-                'port': '/dev/ttyUSB0',
+                'port': '/dev/ttyACM0',
                 'baudrate': 115200
             }]
         ),

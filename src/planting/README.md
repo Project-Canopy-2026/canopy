@@ -35,6 +35,10 @@ src/planting/
 
 
 ## Communication Between ROS2 and Arduino
+# if there is issue with dev/ttyUSB , run this bash command
+```bash 
+ls /dev/ttyACM* /dev/ttyUSB*
+```
 
 The `serial_bridge` node forwards ROS2 string messages to the Arduino over serial and publishes replies back to ROS2.
 
@@ -85,3 +89,69 @@ The ROS2 spin loop and `serial.readline()` are both **blocking** — they'd dead
 Main thread:   rclpy.spin()   ← handles ROS2 callbacks (incoming /arduino_cmd)
 Read thread:   readline()     ← waits for bytes from Arduino
 ```
+
+
+
+  Step 1 — Flash the Arduino
+
+  Open src/planting/planting_arduino/planting_arduino.ino in the Arduino IDE and upload it to the board. It expects:
+  - USB connection on /dev/ttyUSB0
+  - Baud rate: 115200
+
+  Verify the port with:
+  ls /dev/ttyUSB*
+
+  If it's a different port (e.g. /dev/ttyUSB1), update planting_bringup.launch.py accordingly before building.
+
+  ---
+  Step 2 — Source ROS2
+
+  source /opt/ros/humble/setup.bash
+
+  ---
+  Step 3 — Build the package
+
+  From the workspace root (/home/alina/Documents/canopy):
+  colcon build --packages-select planting_controller
+
+  ---
+  Step 4 — Source the workspace overlay
+
+  source install/setup.bash
+
+  ---
+  Step 5 — Launch
+
+  ros2 launch planting_controller planting_bringup.launch.py
+
+  This starts two nodes:
+  - serial_bridge — opens /dev/ttyUSB0 at 115200 baud, bridges /arduino_cmd → serial and serial → /arduino_status
+  - manual_fsm_tester — interactive CLI that publishes to /arduino_cmd and prints /arduino_status responses
+
+  ---
+  Step 6 — Use the CLI
+
+  Once launched, you'll get a > prompt. Commands:
+
+  ┌──────────────────┬──────────────────────────────────────────────────┐
+  │      Input       │                      Effect                      │
+  ├──────────────────┼──────────────────────────────────────────────────┤
+  │ step             │ Advance FSM one state, sends default Arduino cmd │
+  ├──────────────────┼──────────────────────────────────────────────────┤
+  │ reset            │ Return to IDLE                                   │
+  ├──────────────────┼──────────────────────────────────────────────────┤
+  │ state            │ Print current FSM state                          │
+  ├──────────────────┼──────────────────────────────────────────────────┤
+  │ BLDC,IN,50       │ Raw command — spin auger CW at 50 RPM            │
+  ├──────────────────┼──────────────────────────────────────────────────┤
+  │ BLDC,STOP        │ Stop auger                                       │
+  ├──────────────────┼──────────────────────────────────────────────────┤
+  │ STEPPER,CW,100,3 │ Move stepper CW at 100 RPM for 3 seconds         │
+  ├──────────────────┼──────────────────────────────────────────────────┤
+  │ help             │ Show all commands                                │
+  ├──────────────────┼──────────────────────────────────────────────────┤
+  │ quit             │ Shutdown                                         │
+  └──────────────────┴──────────────────────────────────────────────────┘
+
+  Arduino replies (ACK:, DONE:STEPPER, ERR:) will print as [ARDUINO] ....                                                                                   
+  

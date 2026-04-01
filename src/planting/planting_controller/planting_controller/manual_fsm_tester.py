@@ -23,6 +23,7 @@
 # ============================================================
 
 import threading
+import time
 
 import rclpy
 from rclpy.node import Node
@@ -51,16 +52,16 @@ _STATE_SEQ = [
 # None = no Arduino command (LINAK-only state or wait state).
 _ENTRY_CMD = {
     State.IDLE:           None,
-    State.AUGER_SPIN_UP:  'BLDC,IN,50',
+    State.AUGER_SPIN_UP:  'bldc,in,50',
     State.DRILLING_DOWN:  None,           # LINAK vertical down
     State.DRILLING_DWELL: None,           # dwell — no new command
-    State.AUGER_RETRACT:  None,           # LINAK vertical up
-    State.SHIFT_TO_CHUTE: 'STEPPER,CW,100,3',
-    State.CHUTE_DOWN:     None,           # LINAK vertical down
+    State.AUGER_RETRACT:  'bldc,out,50',  # spin out briefly, then stop
+    State.SHIFT_TO_CHUTE: ('bldc,stop','stepper,left,100,3'),
     State.WAIT_SEEDLING:  None,           # operator places seedling
+    State.CHUTE_DOWN:     None,           # LINAK vertical down
     State.CHUTE_RETRACT:  None,           # LINAK vertical up
-    State.SHIFT_TO_AUGER: 'STEPPER,CCW,100,3',
-    State.COMPLETE:       'BLDC,STOP',
+    State.SHIFT_TO_AUGER: 'stepper,right,100,3',
+    State.COMPLETE:       'bldc,stop',
 }
 
 # States that depend on LINAK — logged as skipped when LINAK is not connected.
@@ -79,12 +80,13 @@ FSM commands:
   state         print current FSM state
 
 Raw Arduino commands (sent directly to /arduino_cmd):
-  BLDC,IN,<rpm>           spin auger CW  (rpm 0–75)
-  BLDC,OUT,<rpm>          spin auger CCW
-  BLDC,STOP               stop auger
-  STEPPER,LEFT,<rpm>,<s>    move stepper LEFT  for <s> seconds
-  STEPPER,RIGHT,<rpm>,<s>   move stepper RIGHT for <s> seconds
-  STEPPER,STOP            stop stepper immediately
+  bldc,in,<rpm>             spin auger CW  (rpm 0–75)
+  bldc,out,<rpm>            spin auger CCW
+  bldc,stop                 stop auger
+  stepper,left,<rpm>,<s>    move stepper left  for <s> seconds
+  stepper,right,<rpm>,<s>   move stepper right for <s> seconds
+  stepper,stop              stop stepper immediately
+  stop                      emergency stop — halts BLDC and stepper immediately
 
 Other:
   help          show this message
@@ -97,7 +99,10 @@ class ManualFsmTester(Node):
     def __init__(self):
         super().__init__('manual_fsm_tester')
 
+        # publish to arduino the string commands
         self._cmd_pub = self.create_publisher(String, '/arduino_cmd', 10)
+
+        # listen to serial bridge bridging through arduino status message back
         self._status_sub = self.create_subscription(
             String, '/arduino_status', self._on_status, 10
         )
@@ -123,7 +128,7 @@ class ManualFsmTester(Node):
         msg = String()
         msg.data = cmd.strip()
         self._cmd_pub.publish(msg)
-        print(f'[SENT]    {msg.data}', flush=True)
+        print(f'[SENT]{msg.data}', flush=True)
 
     # ── FSM helpers ───────────────────────────────────────────────────────────
 
@@ -148,7 +153,11 @@ class ManualFsmTester(Node):
             print(f'[FSM] → {new_state.value}', flush=True)
 
         cmd = _ENTRY_CMD.get(new_state)
-        if cmd:
+        if isinstance(cmd, (list, tuple)):
+            for c in cmd:
+                self._send(c)
+                time.sleep(0.1)
+        elif cmd:
             self._send(cmd)
 
     def _reset(self):
@@ -201,7 +210,8 @@ def main(args=None):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == '__main__':
