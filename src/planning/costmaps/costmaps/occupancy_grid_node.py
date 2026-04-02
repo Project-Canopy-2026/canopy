@@ -117,33 +117,15 @@ class OccupancyGridNode(Node):
 
         self.setUpParameters()
 
-        self.create_subscription(PointCloud2, "/velodyn_points", self.pcdCb, 1) # changed from /velodyn_points to /vlp16/depth_pcd to match our topic name
+        lidar_sensor_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=5
+        )
+        self.create_subscription(PointCloud2, "/vlp16/depth_pcd", self.pcdCb, lidar_sensor_qos)
 
         self.occ_grid_pub = self.create_publisher(OccupancyGrid, "/cost/occupancy", 1)
-
-    #     # Publish a free (all-zero) grid at 10 Hz when no Velodyne data is available
-    #     self.create_timer(0.1, self.publishFreeGrid)
-
-    # def publishFreeGrid(self):
-    #     RES = 0.2
-    #     ORIGIN_X_PX = 40
-    #     ORIGIN_X_M = ORIGIN_X_PX * RES
-    #     ORIGIN_Y_PX = 50
-    #     ORIGIN_Y_M = ORIGIN_Y_PX * RES
-    #     GRID_WIDTH = 100
-    #     GRID_HEIGHT = GRID_WIDTH
-
-    #     grid = np.zeros((GRID_HEIGHT, GRID_WIDTH), dtype=np.int8)
-
-    #     origin = Point(x=-ORIGIN_X_M, y=-ORIGIN_Y_M)
-    #     info = MapMetaData(resolution=RES)
-    #     info.origin.position = origin
-
-    #     msg = numpy_to_occupancy_grid(grid, info)
-    #     msg.header.frame_id = "base_link"
-    #     msg.header.stamp = self.get_clock().now().to_msg()
-
-    #     self.occ_grid_pub.publish(msg)
 
     def pcdCb(self, msg: PointCloud2):
         pts = pointcloud2_to_array(msg)
@@ -163,8 +145,6 @@ class OccupancyGridNode(Node):
         ORIGIN_Y_M = ORIGIN_Y_PX * RES
         GRID_WIDTH = 100
         GRID_HEIGHT = GRID_WIDTH
-
-        print(pts)
 
         # Now we need to project everything to an occupancy grid
         arr = pts / RES
