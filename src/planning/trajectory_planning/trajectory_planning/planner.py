@@ -140,7 +140,6 @@ class PlannerNode(Node):
     def generateCandidates(self, top_speed=1.5, time_horizon=5.0, dt=0.5):
 
         # Start with top speed
-        trajectories = []
         candidates = []
 
         v = top_speed
@@ -170,10 +169,9 @@ class PlannerNode(Node):
                     second_pose[3] = t + dt
 
                 second_trajectory = np.asarray(second_trajectory)
-                trajectories.append(second_trajectory)
                 candidate = Candidate(v, omega, second_trajectory)
                 mask = self.getCandidateMask(candidate)
-                candidates_at_speed.append([omega, mask])
+                candidates_at_speed.append([omega, mask, second_trajectory])
                 mega_mask = np.logical_or(mega_mask, mask)
         # plt.imshow(mega_mask, extent=[-8, 12, -10, 10])
         # plt.show()
@@ -207,10 +205,9 @@ class PlannerNode(Node):
                     second_pose[3] = t + dt
 
                 second_trajectory = np.asarray(second_trajectory)
-                trajectories.append(second_trajectory)
                 candidate = Candidate(v, omega, second_trajectory)
                 mask = self.getCandidateMask(candidate)
-                candidates_at_speed.append([omega, mask])
+                candidates_at_speed.append([omega, mask, second_trajectory])
                 mega_mask = np.logical_or(mega_mask, mask)
 
             # plt.imshow(mask, extent=[-8, 12, -10, 10])
@@ -250,10 +247,9 @@ class PlannerNode(Node):
                     second_pose[3] = t + dt
 
                 second_trajectory = np.asarray(second_trajectory)
-                trajectories.append(second_trajectory)
                 candidate = Candidate(v, omega, second_trajectory)
                 mask = self.getCandidateMask(candidate)
-                candidates_at_speed.append([omega, mask])
+                candidates_at_speed.append([omega, mask, second_trajectory])
                 mega_mask = np.logical_or(mega_mask, mask)
 
         # plt.imshow(mega_mask, extent=[-8, 12, -10, 10])
@@ -266,15 +262,12 @@ class PlannerNode(Node):
 
         candidates_msg = TrajectoryCandidates()
 
-        index = 0
-
         for v, candidates_at_speed in candidates:
 
-            for omega, mask in candidates_at_speed:
+            for omega, mask, trajectory in candidates_at_speed:
                 candidate_msg = TrajectoryCandidate()
                 candidate_msg.omega = omega
                 candidate_msg.speed = v
-                trajectory = trajectories[index]
 
                 path_msg = Path()
 
@@ -291,13 +284,8 @@ class PlannerNode(Node):
                 candidate_msg.trajectory = path_msg
                 candidates_msg.candidates.append(candidate_msg)
 
-                print(v, omega, trajectory)
-
-                index += 1
-
         self.candidates_msg = candidates_msg
-
-        # self.candidates_pub.publish(candidates_msg)
+        self.candidates_pub.publish(candidates_msg)
 
         # for trajectory in trajectories:
         #     trajectory = np.asarray(trajectory)
@@ -321,14 +309,26 @@ class PlannerNode(Node):
         # display_img = img.copy()
         mask = np.zeros((100, 100), dtype=bool)
 
-        print(candidate.speed, candidate.omega)
         for pixel_coord in grid_coords:
-            print(pixel_coord)
             rr, cc = disk(pixel_coord, collision_radius_px, shape=(100, 100))
             # display_img[cc, rr] = 50
             mask[cc, rr] = True
 
         return mask
+
+    def trajectoryToPath(self, trajectory: np.ndarray) -> Path:
+        path_msg = Path()
+        path_msg.header.frame_id = "base_link"
+        path_msg.header.stamp = self.get_clock().now().to_msg()
+
+        for x, y, _, _ in trajectory:
+            pose_msg = PoseStamped()
+            pose_msg.header = path_msg.header
+            pose_msg.pose.position.x = float(x)
+            pose_msg.pose.position.y = float(y)
+            path_msg.poses.append(pose_msg)
+
+        return path_msg
 
     def getTotalCost(self, candidate: Candidate, collision_radius: float = 1.0):
 
@@ -437,15 +437,22 @@ class PlannerNode(Node):
         return pts_tfed
 
     def getClosestSeedlingInBaselink(self):
-        if self.total_cost_map is None:
+        if self.total_cost_map is None or self.grid_info is None:
             self.get_logger().warning(
-                f"Could not find closest seedling point. Seedling points unknown."
+                "Could not find closest seedling point. Cost map metadata unavailable."
             )
             return None
 
-        x = self.total_cost_map
-        pixel_coords = np.unravel_index(x.argmin(), x.shape)
-        return [pixel_coords[1] - 40, pixel_coords[0] - 50]
+        pixel_coords = np.unravel_index(self.total_cost_map.argmin(), self.total_cost_map.shape)
+        goal_x = (
+            pixel_coords[1] * self.grid_info.resolution
+            + self.grid_info.origin.position.x
+        )
+        goal_y = (
+            pixel_coords[0] * self.grid_info.resolution
+            + self.grid_info.origin.position.y
+        )
+        return [goal_x, goal_y]
 
     def planCb(self, msg: PlantingPlan):
         self.remaining_seedling_count = len(msg.seedlings)
@@ -613,21 +620,31 @@ class PlannerNode(Node):
     def updateTrajectory(self):
         if self.current_mode == Mode.STOPPED:
             self.publishStatus("Paused")
-            self.twist_pub.publish(Twist())
+            self.twist_pub.publish(self.getSmoothed(Twist()))
             return
-        
+
+        if self.is_turning_downhill:
+            self.publishStatus("Turning downhill before planting")
+            yaw_error = self.TARGET_DOWNHILL_YAW - self.ego_yaw
+
+            if abs(yaw_error) < 0.2:
+                self.facing_downhill_pub.publish(Empty())
+                return
+
+            self.pointTurnFromYawError(yaw_error, omega=1.2, linear=0.8)
+            return
+
         if self.is_planting:
             self.publishStatus("Planting a seedling")
-            self.twist_pub.publish(Twist())
+            self.twist_pub.publish(self.getSmoothed(Twist()))
             return
 
         if self.current_mode == Mode.TELEOP:
-            self.twist_pub.publish(self.cached_teleop)
+            self.twist_pub.publish(self.getSmoothed(self.cached_teleop))
             self.publishStatus("Following teleop commands")
             return
 
-        elif self.current_mode == Mode.ASSISTED:
-            # self.get_logger().error("Assisted teleop is not yet supported!")
+        if self.current_mode == Mode.ASSISTED:
             self.publishAssistedTwist()
             return
 
@@ -635,18 +652,27 @@ class PlannerNode(Node):
             self.get_logger().warning(
                 "Could not plan trajectory. Total cost unavailable."
             )
-            return
-        elif self.ego_yaw is None:
-            self.get_logger().warning("Could not plan trajectory. Ego yaw unavailable.")
+            self.twist_pub.publish(self.getSmoothed(Twist()))
             return
 
-        goal_point = self.getClosestSeedlingInBaselink()
-        if goal_point is None:
+        if self.ego_yaw is None or self.ego_pos is None:
+            self.get_logger().warning("Could not plan trajectory. Ego pose unavailable.")
+            self.twist_pub.publish(self.getSmoothed(Twist()))
+            return
+
+        if self.remaining_seedling_count < 1:
+            self.publishStatus("No remaining seedlings in plan.")
+            self.twist_pub.publish(self.getSmoothed(Twist()))
+            return
+
+        if self.closest_point_bl is None:
             self.get_logger().warning(
-                "Could not get goal point in base_link. Skipping trajectory generation."
+                "Could not plan trajectory. Closest seedling in base_link unavailable."
             )
+            self.twist_pub.publish(self.getSmoothed(Twist()))
             return
 
+        goal_point = self.closest_point_bl
         yaw_error = self.getYawError(goal_point)
 
         POINT_TURN_YAW_ERROR_THRESHOLD = np.pi / 8
@@ -662,30 +688,32 @@ class PlannerNode(Node):
 
             obstacle_free_candidates = []
             for candidate in candidates:
-                omega, mask = candidate
+                omega, mask, trajectory = candidate
                 max_cost = np.max(self.total_cost_map[mask])
                 if max_cost >= 100:
-                    continue  # Skip to next if there's an obstacle
-                else:
-                    total_cost = np.sum(self.total_cost_map[mask])
-                    obstacle_free_candidates.append([speed, omega, total_cost])
+                    continue
+
+                total_cost = np.sum(self.total_cost_map[mask])
+                obstacle_free_candidates.append([speed, omega, total_cost, trajectory])
 
             if len(obstacle_free_candidates) > 0:
                 best_candidate = min(obstacle_free_candidates, key=lambda c: c[2])
                 cmd_msg.linear.x = best_candidate[0]
                 cmd_msg.angular.z = best_candidate[1]
-                self.twist_pub.publish(cmd_msg)
+                self.twist_path_pub.publish(self.trajectoryToPath(best_candidate[3]))
+                self.twist_pub.publish(self.getSmoothed(cmd_msg))
                 self.publishStatus("Driving toward seedling")
                 return
-            else:
-                self.get_logger().debug(f"No obstacle-free candidates at speed {speed}")
 
-        self.twist_pub.publish(cmd_msg)
+            self.get_logger().debug(f"No obstacle-free candidates at speed {speed}")
+
+        self.twist_pub.publish(self.getSmoothed(Twist()))
         self.publishStatus("Stopped for obstacle.")
 
         return
 
     def onGoalPointReached(self):
+
 
         if len(self.seedling_points) < 1:
             self.get_logger().warn("All seedlings reached. End.")

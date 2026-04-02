@@ -9,8 +9,10 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 # MAP_ORIGIN = [40.4431653, -79.9402844, 288.0961589] # steward used this for the Schenley park imagery map origin
 MAP_ORIGIN = [40.44132949798969, -79.94451105594635, 293.0] # try this for the flagstaff hill zoomed in one
 
-
 def generate_launch_description():
+
+    lidar_cloud_topic = "/velodyne_points"
+    lidar_cloud_frame = "velodyne"
 
     trajectory_planner = Node(
         package="trajectory_planning",
@@ -58,6 +60,38 @@ def generate_launch_description():
         parameters=[{"map_origin_lat_lon_alt_degrees": MAP_ORIGIN}],
     )
 
+    patchwork_ground_segmentation = Node(
+        package="patchworkpp",
+        executable="demo",
+        name="ground_segmentation",
+        output="screen",
+        parameters=[
+            {"cloud_topic": lidar_cloud_topic},
+            {"frame_id": lidar_cloud_frame},
+            {"sensor_height": 0.8},
+            {"num_iter": 3},
+            {"num_lpr": 20},
+            {"num_min_pts": 0},
+            {"th_seeds": 0.3},
+            {"th_dist": 0.125},
+            {"th_seeds_v": 0.25},
+            {"th_dist_v": 0.9},
+            {"max_r": 80.0},
+            {"min_r": 1.0},
+            {"uprightness_thr": 0.101},
+            {"verbose": False},
+            {"display_time": False},
+        ],
+        arguments=[lidar_cloud_topic],
+    )
+
+    vlp16_publisher = Node(
+        package="vlp16_logger",
+        executable="vlp16_publisher",
+        name="vlp16_publisher",
+        output="screen",
+    )
+
     localization = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
@@ -86,11 +120,13 @@ def generate_launch_description():
 
     return LaunchDescription([
         localization,
-        #fsm,
-        #plan_manager,
+        patchwork_ground_segmentation,
+        #vlp16_publisher,
+        fsm,
+        plan_manager,
         occupancy_grid,
         cost_map,
-        #trajectory_planner,
+        trajectory_planner,
         #demo_waypoint_follower,
         # rqt,
         # rviz,

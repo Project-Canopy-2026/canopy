@@ -117,7 +117,13 @@ class OccupancyGridNode(Node):
 
         self.setUpParameters()
 
-        # self.create_subscription(PointCloud2, "/vlp16/depth_pcd", self.pcdCb, 1) # changed from /velodyn_points to /vlp16/depth_pcd to match our topic name
+        lidar_sensor_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=5
+        )
+        self.create_subscription(PointCloud2, "/nonground", self.pcdCb, lidar_sensor_qos)
 
         self.occ_grid_pub = self.create_publisher(OccupancyGrid, "/cost/occupancy", 1)
          # Publish a free (all-zero) grid at 10 Hz when no Velodyne data is available
@@ -168,8 +174,6 @@ class OccupancyGridNode(Node):
         ORIGIN_Y_M = ORIGIN_Y_PX * RES
         GRID_WIDTH = 100
         GRID_HEIGHT = GRID_WIDTH
-
-        print(pts)
 
         # Now we need to project everything to an occupancy grid
         arr = pts / RES
