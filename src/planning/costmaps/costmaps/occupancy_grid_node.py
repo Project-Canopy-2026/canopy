@@ -123,7 +123,7 @@ class OccupancyGridNode(Node):
             history=HistoryPolicy.KEEP_LAST,
             depth=5
         )
-        self.create_subscription(PointCloud2, "/vlp16/depth_pcd", self.pcdCb, lidar_sensor_qos)
+        self.create_subscription(PointCloud2, "/nonground", self.pcdCb, lidar_sensor_qos)
 
         self.occ_grid_pub = self.create_publisher(OccupancyGrid, "/cost/occupancy", 1)
 

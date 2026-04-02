@@ -121,7 +121,7 @@ def generate_launch_description():
     return LaunchDescription([
         localization,
         patchwork_ground_segmentation,
-        vlp16_publisher,
+        #vlp16_publisher,
         fsm,
         plan_manager,
         occupancy_grid,
