@@ -102,6 +102,21 @@ def generate_launch_description():
         )
     )
 
+    velodyne_static_tf = Node(
+        package = "tf2_ros",
+        executable = "static_transform_publisher",
+        name = "base_to_velodyne_static_tf",
+        arguments = [
+            "--x", "0.25",
+            "--y", "0.42",
+            "--z", "1.06",
+            "--yaw", "0",
+            "--pitch", "0",
+            "--roll", "0",
+            "--frame-id", "base_link",
+            "--child-frame-id", "velodyne"]
+    )
+
     # rqt lets you inspect topics, plot values, and publish test messages
     # rqt = Node(
     #     package="rqt_gui",
@@ -120,6 +135,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         localization,
+        velodyne_static_tf,
         patchwork_ground_segmentation,
         #vlp16_publisher,
         fsm,
