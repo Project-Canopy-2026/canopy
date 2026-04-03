@@ -19,7 +19,7 @@ canopy/
 │   ├── localization/       # SLAM
 │   ├── navigation/         # path planning, obstacle avoidance
 │   ├── planting_control/   # planting mechanism system control
-│   ├── arm_control/        # robot arm control
+│   ├── manipulation/        # robot arm control
 │   └── integration/
 ├── tools/                  # dev-only, NOT on final robot
 │   ├── perception/
@@ -28,7 +28,7 @@ canopy/
 │   ├── localization/
 │   ├── navigation/
 │   ├── planting_control/
-│   ├── arm_control/
+│   ├── manipulation/
 │   └── integration/
 ├── docs/                   # documentations
 ├── .gitignore                
