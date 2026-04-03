@@ -60,6 +60,32 @@ def generate_launch_description():
         parameters=[{"map_origin_lat_lon_alt_degrees": MAP_ORIGIN}],
     )
 
+    velodyne_driver = Node(
+        package="velodyne_driver",
+        executable="velodyne_driver_node",
+        name="velodyne_driver",
+        output="screen",
+        parameters=[{
+            "device_ip": "192.168.1.201",
+            "frame_id": "velodyne",
+            "model": "VLP16",
+            "rpm": 600.0,
+        }],
+    )
+
+    velodyne_pointcloud = Node(
+        package="velodyne_pointcloud",
+        executable="velodyne_transform_node",
+        name="velodyne_convert",
+        output="screen",
+        parameters=[{
+            "calibration": "/opt/ros/humble/share/velodyne_pointcloud/params/VLP16_hires_db.yaml",
+            "min_range": 0.1, # allowed 0.1 to 10
+            "max_range": 100.0, # allowed 0.1 to 200
+            "organize_cloud": False,
+        }],
+    )
+
     patchwork_ground_segmentation = Node(
         package="patchworkpp",
         executable="demo",
@@ -85,11 +111,20 @@ def generate_launch_description():
         arguments=[lidar_cloud_topic],
     )
 
-    vlp16_publisher = Node(
-        package="vlp16_logger",
-        executable="vlp16_publisher",
-        name="vlp16_publisher",
-        output="screen",
+    # needs adjustment
+    velodyne_static_tf = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="base_to_velodyne_static_tf",
+        arguments=[
+            "--x", "0.25",
+            "--y", "0.42",
+            "--z", "0.45",
+            "--yaw", "0",
+            "--pitch", "0",
+            "--roll", "0",
+            "--frame-id", "base_link",
+            "--child-frame-id", "velodyne"],
     )
 
     localization = IncludeLaunchDescription(
@@ -100,21 +135,6 @@ def generate_launch_description():
                 'localization_bringup.launch.py'
             )
         )
-    )
-
-    velodyne_static_tf = Node(
-        package = "tf2_ros",
-        executable = "static_transform_publisher",
-        name = "base_to_velodyne_static_tf",
-        arguments = [
-            "--x", "0.25",
-            "--y", "0.42",
-            "--z", "1.06",
-            "--yaw", "0",
-            "--pitch", "0",
-            "--roll", "0",
-            "--frame-id", "base_link",
-            "--child-frame-id", "velodyne"]
     )
 
     # rqt lets you inspect topics, plot values, and publish test messages
@@ -136,8 +156,9 @@ def generate_launch_description():
     return LaunchDescription([
         localization,
         velodyne_static_tf,
+        velodyne_driver,
+        velodyne_pointcloud,
         patchwork_ground_segmentation,
-        #vlp16_publisher,
         fsm,
         plan_manager,
         occupancy_grid,
