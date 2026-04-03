@@ -54,7 +54,8 @@ _ENTRY_CMD = {
     State.IDLE:           None,
     State.AUGER_SPIN_UP:  'bldc,in,75',
     State.DRILLING_DOWN:  None,           # LINAK vertical down
-    State.DRILLING_DWELL: None,           # dwell — no new command
+    State.D
+     RILLING_DWELL: None,           # dwell — no new command
     State.AUGER_RETRACT:  'bldc,out,75',  # spin out briefly, then stop
     State.SHIFT_TO_CHUTE: ('bldc,stop','stepper,left,100,4'),
     State.WAIT_SEEDLING:  None,           # operator places seedling
