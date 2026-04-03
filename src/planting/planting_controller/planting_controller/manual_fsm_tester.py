@@ -130,6 +130,7 @@ class ManualFsmTester(Node):
         self._cmd_pub.publish(msg)
         print(f'[SENT]{msg.data}', flush=True)
 
+    
     # ── FSM helpers ───────────────────────────────────────────────────────────
 
     def _current_state(self) -> State:

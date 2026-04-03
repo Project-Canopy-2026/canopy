@@ -1,3 +1,5 @@
+# LINAK CANOpen reference: https://cdn.linak.com/-/media/files/ic-and-bus-actuators/techline-canopen-user-manual-eng-legacy.pdf?_gl=1*1os9jmo*_gcl_au*NzcwNjk5ODIyLjE3NDQyOTk4MjQ
+# On page 11, it details the PDO message structure mapping
 import canopen
 import time
 import threading
@@ -24,11 +26,11 @@ stop_heartbeat = threading.Event()
 def send_actuator_command(position_code):
     """Send 8-byte RPDO message."""
     msg = [
-        position_code & 0xFF, (position_code >> 8) & 0xFF,  # Position field (little endian)
+        position_code & 0xFF, (position_code >> 8) & 0xFF,  # Position field (little endian, right to left)
         0xFB, 0xFB, 0xFB, 0xFB,  # Default current, speed, ramps
         0x00, 0x00  # Padding
     ]
-    print(f"📤 RPDO Command → {msg}")
+    print(f"RPDO Command → {msg}")
     network.send_message(COB_ID_RPDO1, msg)
 
 def heartbeat_loop():
