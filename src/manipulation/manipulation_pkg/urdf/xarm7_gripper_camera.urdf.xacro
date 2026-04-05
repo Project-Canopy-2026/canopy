@@ -1,0 +1,200 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="xarm7_with_d405_and_custom_gripper">
+
+  <!-- args -->
+  <xacro:arg name="prefix" default=""/>
+  <xacro:arg name="hw_ns" default="xarm"/>
+  <xacro:arg name="limited" default="false"/>
+  <xacro:arg name="effort_control" default="false"/>
+  <xacro:arg name="velocity_control" default="false"/>
+
+  <xacro:arg name="robot_ip" default=""/>
+  <xacro:arg name="robot_sn" default=""/>
+  <xacro:arg name="report_type" default="normal"/>
+
+  <xacro:arg name="dof" default="7"/>
+  <xacro:arg name="robot_type" default="xarm"/>
+
+  <!-- Where the whole arm attaches -->
+  <xacro:arg name="attach_to" default="world"/>
+  <xacro:arg name="attach_xyz" default="0 0 0"/>
+  <xacro:arg name="attach_rpy" default="0 0 0"/>
+
+  <!-- ========================= -->
+  <!-- CUSTOM GRIPPER MOUNT POSE -->
+  <!-- MODIFY THESE -->
+  <!-- Pose of your gripper base relative to xArm link_eef -->
+  <!-- ========================= -->
+  <xacro:arg name="gripper_xyz" default="0.000 0.000 0.040"/>
+  <xacro:arg name="gripper_rpy" default="0 0 0"/>
+
+  <!-- ========================= -->
+  <!-- CUSTOM CAMERA MOUNT POSE -->
+  <!-- MODIFY THESE -->
+  <!-- Pose of D405 body relative to custom gripper base -->
+  <!-- If camera is mounted directly to link_eef instead, change parent joint below -->
+  <!-- ========================= -->
+  <xacro:arg name="camera_xyz" default="0.060 0.000 0.050"/>
+  <xacro:arg name="camera_rpy" default="0 0 0"/>
+
+  <!-- ========================= -->
+  <!-- Optional simple geometry sizes -->
+  <!-- MODIFY THESE if your rough size is different -->
+  <!-- ========================= -->
+  <xacro:arg name="gripper_size" default="0.080 0.050 0.100"/>
+  <xacro:arg name="camera_size" default="0.042 0.042 0.023"/>
+
+  <!-- ========================= -->
+  <!-- Optional masses -->
+  <!-- MODIFY THESE if known -->
+  <!-- ========================= -->
+  <xacro:arg name="gripper_mass" default="0.350"/>
+  <xacro:arg name="camera_mass" default="0.060"/>
+
+  <!-- Include official xArm description -->
+  <xacro:include filename="$(find xarm_description)/urdf/xarm_device.urdf.xacro"/>
+
+  <!-- Build xArm7 base -->
+  <!-- Keep stock gripper/camera OFF because we are defining our own -->
+  <xacro:xarm_device
+    prefix="$(arg prefix)"
+    hw_ns="$(arg hw_ns)"
+    limited="$(arg limited)"
+    effort_control="$(arg effort_control)"
+    velocity_control="$(arg velocity_control)"
+    robot_ip="$(arg robot_ip)"
+    robot_sn="$(arg robot_sn)"
+    report_type="$(arg report_type)"
+    dof="$(arg dof)"
+    robot_type="$(arg robot_type)"
+    attach_to="$(arg attach_to)"
+    attach_xyz="$(arg attach_xyz)"
+    attach_rpy="$(arg attach_rpy)"
+    add_gripper="false"
+    add_vacuum_gripper="false"
+    add_bio_gripper="false"
+    add_realsense_d435i="false"
+    add_d435i_links="false"
+  />
+
+  <!-- ===================================================== -->
+  <!-- CUSTOM GRIPPER -->
+  <!-- Replace this simple box with your real mesh later -->
+  <!-- ===================================================== -->
+  <link name="$(arg prefix)custom_gripper_base">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="$(arg gripper_size)"/>
+      </geometry>
+      <material name="dark_gray">
+        <color rgba="0.25 0.25 0.25 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="$(arg gripper_size)"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="$(arg gripper_mass)"/>
+      <inertia
+        ixx="0.0005" ixy="0.0" ixz="0.0"
+        iyy="0.0005" iyz="0.0"
+        izz="0.0005"/>
+    </inertial>
+  </link>
+
+  <joint name="$(arg prefix)custom_gripper_joint" type="fixed">
+    <parent link="$(arg prefix)link_eef"/>
+    <child link="$(arg prefix)custom_gripper_base"/>
+    <origin xyz="$(arg gripper_xyz)" rpy="$(arg gripper_rpy)"/>
+  </joint>
+
+  <!-- Optional TCP frame at the front of the gripper -->
+  <!-- MODIFY THIS if you want a better tool center point -->
+  <link name="$(arg prefix)tool_tcp"/>
+
+  <joint name="$(arg prefix)tool_tcp_joint" type="fixed">
+    <parent link="$(arg prefix)custom_gripper_base"/>
+    <child link="$(arg prefix)tool_tcp"/>
+    <origin xyz="0.080 0.000 0.000" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ===================================================== -->
+  <!-- D405 BODY -->
+  <!-- Replace this simple box with a mesh later if desired -->
+  <!-- ===================================================== -->
+  <link name="$(arg prefix)d405_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="$(arg camera_size)"/>
+      </geometry>
+      <material name="camera_black">
+        <color rgba="0.05 0.05 0.05 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="$(arg camera_size)"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="$(arg camera_mass)"/>
+      <inertia
+        ixx="0.00005" ixy="0.0" ixz="0.0"
+        iyy="0.00005" iyz="0.0"
+        izz="0.00005"/>
+    </inertial>
+  </link>
+
+  <!-- Camera mounted to gripper -->
+  <joint name="$(arg prefix)d405_mount_joint" type="fixed">
+    <parent link="$(arg prefix)custom_gripper_base"/>
+    <child link="$(arg prefix)d405_link"/>
+    <origin xyz="$(arg camera_xyz)" rpy="$(arg camera_rpy)"/>
+  </joint>
+
+  <!-- ===================================================== -->
+  <!-- D405 FRAMES -->
+  <!-- Keep these even if you later swap visual mesh -->
+  <!-- ===================================================== -->
+
+  <!-- Base depth frame -->
+  <link name="$(arg prefix)d405_depth_frame"/>
+  <joint name="$(arg prefix)d405_depth_frame_joint" type="fixed">
+    <parent link="$(arg prefix)d405_link"/>
+    <child link="$(arg prefix)d405_depth_frame"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Standard optical frame for depth -->
+  <link name="$(arg prefix)d405_depth_optical_frame"/>
+  <joint name="$(arg prefix)d405_depth_optical_joint" type="fixed">
+    <parent link="$(arg prefix)d405_depth_frame"/>
+    <child link="$(arg prefix)d405_depth_optical_frame"/>
+    <origin xyz="0 0 0" rpy="-1.57079632679 0 -1.57079632679"/>
+  </joint>
+
+  <!-- Optional color frame -->
+  <link name="$(arg prefix)d405_color_frame"/>
+  <joint name="$(arg prefix)d405_color_frame_joint" type="fixed">
+    <parent link="$(arg prefix)d405_link"/>
+    <child link="$(arg prefix)d405_color_frame"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Standard optical frame for color -->
+  <link name="$(arg prefix)d405_color_optical_frame"/>
+  <joint name="$(arg prefix)d405_color_optical_joint" type="fixed">
+    <parent link="$(arg prefix)d405_color_frame"/>
+    <child link="$(arg prefix)d405_color_optical_frame"/>
+    <origin xyz="0 0 0" rpy="-1.57079632679 0 -1.57079632679"/>
+  </joint>
+
+</robot>
