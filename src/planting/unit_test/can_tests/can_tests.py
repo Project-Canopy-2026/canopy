@@ -6,7 +6,8 @@ import threading
 
 # === Configuration ===
 CHANNEL = 'can0'
-NODE_ID = 0x20 #32 decimal
+NODE_ID = 0x20 # 32 for auger
+# NODE_ID = 0x21 #33 for chute
 COB_ID_RPDO1 = 0x200 + NODE_ID
 BOOTUP_COB_ID = 0x700 + NODE_ID
 HEARTBEAT_PRODUCER_ID = 0x701  # Master heartbeat ID
@@ -27,7 +28,7 @@ def send_actuator_command(position_code):
     """Send 8-byte RPDO message."""
     msg = [
         position_code & 0xFF, (position_code >> 8) & 0xFF,  # Position field (little endian, right to left)
-        0xFB, 0xFB, 0xFB, 0xFB,  # Default current, speed, ramps
+        0xFB, 0xCD, 0xFB, 0xFB,  # Default current, MAX speed, defualt ramps
         0x00, 0x00  # Padding
     ]
     print(f"RPDO Command → {msg}")
@@ -105,10 +106,10 @@ time.sleep(5)
 # send_actuator_command(64259)
 # time.sleep(1)
 
-# # === RUN IN ===
-# print("⬇️  RUN IN...")
-# send_actuator_command(64258)
-# time.sleep(5)
+# === RUN IN ===
+print("⬇️  RUN IN...")
+send_actuator_command(64258)
+time.sleep(5)
 
 # === Final STOP ===
 print("Final STOP...")
