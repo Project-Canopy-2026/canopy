@@ -5,13 +5,24 @@ package_name = 'planting_controller'
 setup(
     name=package_name,
     version='0.0.0',
-    packages=find_packages(exclude=['test']),
+    packages=[
+        'planting_controller',
+        'unit_test',
+        'unit_test.can_tests',
+    ],
+    package_dir={
+        'planting_controller': 'planting_controller',
+        'unit_test': '../unit_test',
+        'unit_test.can_tests': '../unit_test/can_tests',
+    },
     data_files=[
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        ('share/' + package_name + '/launch',
-            ['launch/planting_bringup.launch.py']),
+        ('share/' + package_name + '/launch', [
+            'launch/planting_bringup.launch.py',
+            'launch/linak_test.launch.py',
+        ]),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -27,6 +38,8 @@ setup(
             'serial_bridge = planting_controller.serial_bridge:main',
             'planting_fsm = planting_controller.planting_fsm:main',
             'manual_fsm_tester = planting_controller.manual_fsm_tester:main',
+            'linak_can_node = unit_test.can_tests.linak_can_node:main',
+            'linak_test = unit_test.can_tests.linak_cmd_test_node:main',
         ],
     },
 )

@@ -27,9 +27,16 @@ src/planting/
 │   │   ├── __init__.py
 │   │   ├── serial_bridge.py            ← bridges /arduino_cmd ↔ serial ↔ /arduino_status
 │   │   ├── planting_fsm.py             ← (TODO) state machine node
-│   │   └── linak_can_node.py           ← (TODO) LINAK CAN bus node
+│   │   └── manual_fsm_tester.py        ← interactive CLI for serial_bridge + FSM
 │   └── launch/
-│       └── planting_bringup.launch.py
+│       ├── planting_bringup.launch.py  ← serial bridge + FSM
+│       └── linak_test.launch.py        ← linak_can_node + linak_cmd_test_node
+├── unit_test/
+│   └── can_tests/
+│       ├── linak_can_node.py           ← CANopen node for both LINAK actuators (can0 @ 125 kbps)
+│       ├── linak_cmd_test_node.py      ← interactive CLI tester for linak_can_node
+│       ├── can_tests.py
+│       └── LINAK-actuator-v3-1.eds
 └── README.md
 ```
 
@@ -57,7 +64,7 @@ Arduino replies:
 - `ERR:<reason>` — unknown or malformed command
 
 
-## Running the Manual Test
+## Running the Manual Test for the Serial Bridge + manual_fsm tester before LINAK is connected
 
 ### Step 1 — Find and fix the serial port
 
@@ -127,3 +134,67 @@ Once launched, you'll get a `>` prompt:
 | `quit` | Shutdown |
 
 Arduino replies print as `[ARDUINO] ...`.
+
+
+## Running the Manual Test for linak_can_node and linak_cmd_test_node to test the CAN side
+
+### Step 1 — Bring up the CAN interface
+
+```bash
+sudo ip link set can0 up type can bitrate 125000
+```
+
+Verify it's up:
+
+```bash
+ip link show can0
+```
+
+### Step 2 — Build and source
+
+```bash
+source /opt/ros/humble/setup.bash
+
+cd ~/Documents/canopy
+colcon build --packages-select planting_controller
+source install/setup.bash
+```
+
+### Step 3 — Launch
+
+```bash
+ros2 launch planting_controller linak_test.launch.py
+```
+
+This starts two nodes:
+- `linak_can_node` — connects to `can0`, initialises both LINAK actuators, and listens on `/linak_cmd`
+- `linak_test` — opens in a separate `xterm` with an interactive `>` prompt that publishes to `/linak_cmd` and prints replies from `/linak_status`
+
+> **Note:** `linak_can_node` looks for `LINAK-actuator-v3-1.eds` in its working directory. If you see an EDS-not-found error, run the launch from `src/planting/unit_test/can_tests/`, or copy the EDS file to the directory you launch from.
+
+### Step 4 — Use the CLI (in the xterm)
+
+| Input | Effect |
+|---|---|
+| `1 down <secs>` | Drive LINAK_1 (auger) down for N seconds |
+| `1 up <secs>` | Drive LINAK_1 up for N seconds |
+| `2 down <secs>` | Drive LINAK_2 (chute) down for N seconds |
+| `2 up <secs>` | Drive LINAK_2 up for N seconds |
+| `1 stop` | Stop LINAK_1 immediately |
+| `2 stop` | Stop LINAK_2 immediately |
+| `q` | Quit |
+
+Status replies print automatically as `← <status>`:
+
+| Status | Meaning |
+|---|---|
+| `READY:LINAK` | Both actuators initialised |
+| `ACK:LINAK<n>` | Command accepted |
+| `DONE:LINAK<n>` | Timed move finished |
+| `ERR:LINAK<n>:…` | Fault — check log for details |
+
+### Tear down
+
+```bash
+sudo ip link set can0 down
+```
