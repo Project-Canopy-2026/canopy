@@ -209,3 +209,5 @@ __marimo__/
 # ROS 2 / Colcon build folders
 install/
 log/
+
+.claude/

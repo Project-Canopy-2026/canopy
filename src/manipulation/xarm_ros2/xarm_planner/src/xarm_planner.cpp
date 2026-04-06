@@ -29,7 +29,7 @@ XArmPlanner::XArmPlanner(const std::string& group_name)
 void XArmPlanner::init(const std::string& group_name) 
 {
     is_trajectory_ = false;
-    move_group_ = std::make_shared<::planning_interface::MoveGroupInterface>(node_, group_name);
+    move_group_ = std::make_shared<moveit::planning_interface::MoveGroupInterface>(node_, group_name);
     RCLCPP_INFO(node_->get_logger(), "Planning frame: %s", move_group_->getPlanningFrame().c_str());
     RCLCPP_INFO(node_->get_logger(), "End effector link: %s", move_group_->getEndEffectorLink().c_str());
     RCLCPP_INFO(node_->get_logger(), "Available Planning Groups:");
@@ -79,7 +79,7 @@ bool XArmPlanner::planCartesianPath(const std::vector<geometry_msgs::msg::Pose>&
     // moveit_msgs::msg::RobotTrajectory trajectory;
     
     // double fraction = move_group_->computeCartesianPath(pose_target_vector, eef_step, jump_threshold, trajectory_);
-    double fraction = move_group_->computeCartesianPath(pose_target_vector, eef_step, trajectory_);
+    double fraction = move_group_->computeCartesianPath(pose_target_vector, eef_step, jump_threshold, trajectory_);
     bool success = true;
     if(fraction < 0.9) {
         RCLCPP_ERROR(node_->get_logger(), "planCartesianPath: plan failed, fraction=%lf", fraction);
