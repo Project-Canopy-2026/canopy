@@ -31,10 +31,9 @@
   <!-- ========================= -->
   <!-- CUSTOM CAMERA MOUNT POSE -->
   <!-- MODIFY THESE -->
-  <!-- Pose of D405 body relative to custom gripper base -->
-  <!-- If camera is mounted directly to link_eef instead, change parent joint below -->
+  <!-- Pose of D405 body relative to xArm link_eef -->
   <!-- ========================= -->
-  <xacro:arg name="camera_xyz" default="0.060 0.000 0.050"/>
+  <xacro:arg name="camera_xyz" default="0.0 0.07 0.06"/>
   <xacro:arg name="camera_rpy" default="0 0 0"/>
 
   <!-- ========================= -->
@@ -153,9 +152,9 @@
     </inertial>
   </link>
 
-  <!-- Camera mounted to gripper -->
+  <!-- Camera mounted to end effector link -->
   <joint name="$(arg prefix)d405_mount_joint" type="fixed">
-    <parent link="$(arg prefix)custom_gripper_base"/>
+    <parent link="$(arg prefix)link_eef"/>
     <child link="$(arg prefix)d405_link"/>
     <origin xyz="$(arg camera_xyz)" rpy="$(arg camera_rpy)"/>
   </joint>
