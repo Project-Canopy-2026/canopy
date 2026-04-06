@@ -123,6 +123,7 @@ class OccupancyGridNode(Node):
 
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
+        self.last_cloud_time = None
 
         lidar_sensor_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -134,8 +135,15 @@ class OccupancyGridNode(Node):
 
         self.occ_grid_pub = self.create_publisher(OccupancyGrid, "/cost/occupancy", 1)
          # Publish a free (all-zero) grid at 10 Hz when no Velodyne data is available
-        #self.create_timer(0.1, self.publishFreeGrid)
+        self.create_timer(0.1, self.publishFreeGridIfStale)
 
+
+    def publishFreeGridIfStale(self):
+        if self.last_cloud_time is not None:
+            age = self.get_clock().now() - self.last_cloud_time
+            if age < Duration(seconds=0.3):
+                return
+            self.publishFreeGrid()
 
     def publishFreeGrid(self):
         RES = 0.2
@@ -192,6 +200,8 @@ class OccupancyGridNode(Node):
 
 
     def pcdCb(self, msg: PointCloud2):
+        self.last_cloud_time = self.get_clock().now()
+
         pts = pointcloud2_to_array(msg)
 
         pts = pts.flatten()
@@ -221,8 +231,8 @@ class OccupancyGridNode(Node):
 
         # TODO: Perform PROPER plane segmentation
         # For now, we'll naively check height
-        #HEIGHT_CUTOFF = 0.3
-        #arr = arr[arr[:, 2] > HEIGHT_CUTOFF]
+        HEIGHT_CUTOFF = 0.3
+        arr = arr[arr[:, 2] > HEIGHT_CUTOFF]
         arr = arr[:, :2]
 
         # Discard indices outside of bounds

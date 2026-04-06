@@ -26,7 +26,8 @@ class CostMapNode(Node):
             PlantingPlan, "/planning/remaining_plan", self.planCb, 1
         )
         self.create_subscription(OccupancyGrid, "/cost/occupancy", self.occCb, 1)
-        self.create_subscription(Odometry, "/odometry/gps", self.odomCb, 1)
+        self.create_subscription(Odometry, "/odometry/gps", self.gpsodomCb, 1)
+        self.create_subscription(Odometry, "/odometry/filtered", self.localodomCb, 1)
         self.create_subscription(
             Empty, "/behavior/on_seedling_reached", self.onSeedlingReached, 1
         )
@@ -58,10 +59,12 @@ class CostMapNode(Node):
         arr = np.asarray(msg.data).reshape(msg.info.height, msg.info.width)
         self.cached_occ = arr
 
-    def odomCb(self, msg: Odometry):
+    # separated gps and local odomertry because ekf is not ready and there's no fully fused global odometry yet
+    def gpsodomCb(self, msg: Odometry):
         pos = msg.pose.pose.position
         self.ego_pos = (pos.x, pos.y)
 
+    def localodomCb(self, msg: Odometry):
         q = msg.pose.pose.orientation
         r = R.from_quat([q.x, q.y, q.z, q.w])
         self.ego_yaw = r.as_euler("xyz")[2]
