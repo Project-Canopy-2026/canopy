@@ -13,6 +13,7 @@ setup(
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/launch', ['launch/arm_bringup.launch.py']),
         ('share/' + package_name + '/urdf', ['urdf/xarm_gripper_camera.urdf.xacro',])
+        ('share/' + package_name + '/config', ['config/robot_params.yaml',])
     ],
     install_requires=['setuptools'],
     zip_safe=True,
