@@ -3,18 +3,19 @@ import os
 import argparse
 
 pwd = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(pwd, "..", "models", "best.pt")
+model_name = "0402_yolo11s"
+MODEL_PATH = os.path.join(pwd, "..", "models", model_name, "best.pt")
 
 def predict(image_dir: str):
-    rgb_dir    = os.path.join(image_dir, "rgb")
-    output_dir = os.path.join(image_dir, "pot_detections")
+    rgb_dir    = os.path.join(image_dir)
+    output_dir = os.path.join(image_dir, "pot_detections", model_name)
 
     model = YOLO(MODEL_PATH)
     model.predict(
         source  = rgb_dir,
         save    = True,
         imgsz   = 640,
-        conf    = 0.5, # confidence threshold
+        conf    = 0.56, # confidence threshold
         project = output_dir,
         device  = "cpu",
     )

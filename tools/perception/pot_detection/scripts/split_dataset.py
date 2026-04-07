@@ -3,15 +3,15 @@ import shutil
 import random
 
 # --- Configuration ---
-SOURCE_IMAGES = "/home/shuyi/data/annotated_data/Pot detection.yolov11/train/images"   # exported images from Label Studio annotation result
-SOURCE_LABELS = "/home/shuyi/data/annotated_data/Pot detection.yolov11/train/labels"   # exported labels from Label Studio annotation result
-OUTPUT_DIR    = "/home/shuyi/data/pot_dataset"               # final split dataset
+SOURCE_IMAGES = "/home/shuyi/data/annotated_data/0402/Pot detection.yolov11/train/images"   # exported images from Label Studio annotation result
+SOURCE_LABELS = "/home/shuyi/data/annotated_data/0402/Pot detection.yolov11/train/labels"   # exported labels from Label Studio annotation result
+OUTPUT_DIR    = "/home/shuyi/data/pot_dataset/0402"               # final split dataset
 
 TRAIN_RATIO = 0.7
 VAL_RATIO   = 0.2
 TEST_RATIO  = 0.1  # must sum to 1.0
 
-SEED = 42
+SEED = 13
 
 # --- Setup output directories ---
 for split in ("train", "val", "test"):

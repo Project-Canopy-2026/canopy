@@ -29,8 +29,8 @@ class SeedlingDetector(Node):
         
         self.bridge = CvBridge()
         
-        self.model = YOLO('/home/teamj/dev/ros2_ws/src/canopy/src/perception/pot_detector/model/best.pt')
-
+        # self.model = YOLO('/home/teamj/dev/ros2_ws/src/canopy/src/perception/pot_detector/model/best.pt')
+        self.model = YOLO('src/perception/pot_detector/model/yolo11n/best.pt')
     def image_callback(self, msg: Image, depth_msg: Image):
         # Convert ROS images to OpenCV
         cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='rgb8')
