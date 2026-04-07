@@ -4,9 +4,13 @@ import rclpy
 from rclpy.node import Node
 from std_srvs.srv import Trigger
 from xarm_msgs.srv import PlanPose, PlanExec, PlanJoint
-from geometry_msgs.msg import Pose
+from geometry_msgs.msg import Pose, PointStamped
 from moveit_msgs.msg import CollisionObject, PlanningScene
 from shape_msgs.msg import SolidPrimitive
+
+# grasp pose imports
+from std_msgs.msg import Bool
+from moveit.planning import MoveItPy
 
 
 class ManipulationPlanner(Node):
@@ -38,6 +42,14 @@ class ManipulationPlanner(Node):
         self.get_logger().info('Planner node started. Waiting for services...')
         self._wait_for_services()
         self.get_logger().info('All services ready.')
+
+        # grasp pose init
+        self.moveit = MoveItPy(node_name="moveit_py")
+        self.psm = self.moveit.get_planning_scene_monitor()
+        self.ee_link = "link_tcp"
+
+        self.call_detection = self.create_publisher(Bool, 'behavior/enable_pot_detection', 10)
+
 
     def euler_to_quaternion(self, roll_deg, pitch_deg, yaw_deg):
         r = math.radians(roll_deg)
@@ -173,6 +185,24 @@ class ManipulationPlanner(Node):
         self.get_logger().info(f'Gripper {action} success')
         return True
 
+    def get_gripper_pose(self):
+        with self.psm.read_only() as scene:
+            robot_state = scene.current_state
+            robot_state.update()
+            pose = robot_state.get_pose(self.ee_link)
+            return pose
+
+    def get_grasp_pose(self):
+        # get gripper cartesian position
+        gipper_pose = self.get_gripper_pose()
+        gripper_x = gripper_pose.position.x
+        gripper_y = gripper_pose.position.y
+        gripper_z = gripper_pose.position.z
+
+        # calculate vector from pot to gripper
+
+
+
     def run(self):
         self.get_logger().info('Starting pick and place sequence...')
 
@@ -193,11 +223,18 @@ class ManipulationPlanner(Node):
         
         # time.sleep(1.0)
 
+        # pre-grasp to picking up the pot
         self.get_logger().info('Step 2: Opening gripper...')
         if not self._call_gripper(self.gripper_open, 'open'):
             return
         
         time.sleep(1.0)
+
+        # run pot detector
+        self.call_detection.publish(True)
+
+        # update grasp pose
+        self.get_grasp_pose()
 
         self.get_logger().info('Step 3: Moving towards to grasp...')
         if not self._call_plan_pose(self.grasp_pose):
