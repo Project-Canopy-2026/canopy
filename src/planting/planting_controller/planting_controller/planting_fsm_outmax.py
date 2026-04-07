@@ -1,3 +1,8 @@
+# Alternative FSM that uses LINAK OUT_MAX / IN_MAX position commands instead of
+# timed DOWN / UP moves. DRILLING_DOWN drives LINAK_1 to full extension (64255)
+# and AUGER_RETRACT drives it back to full retraction (150). Completion is
+# detected by linak_can_node via TPDO position stabilisation, so no duration
+# parameters are needed for those two states.
 import enum
 import threading
 
@@ -13,7 +18,7 @@ from std_msgs.msg import Bool, Empty, String
 class State(enum.Enum):
     IDLE            = 'IDLE'
     AUGER_SPIN_UP   = 'AUGER_SPIN_UP'   # bldc continuous spin [transition: immediate]
-    DRILLING_DOWN   = 'DRILLING_DOWN'   # linak runs out to max position 64255[transition: DONE:LINAK1]
+    DRILLING_DOWN   = 'DRILLING_DOWN'   # linak runs out to max position 64255 [transition: DONE:LINAK1]
     DRILLING_DWELL  = 'DRILLING_DWELL'  # bldc continuous spin [transition: 10s timer]
     AUGER_RETRACT   = 'AUGER_RETRACT'   # bldc spins other way, linak runs in to max position 150 [transition: DONE:LINAK1]
     SHIFT_TO_CHUTE  = 'SHIFT_TO_CHUTE'  # bldc stops, stepper starts [transition: DONE:STEPPER]
@@ -34,6 +39,7 @@ class PlantingFsmNode(Node):
     Orchestrates the full planting sequence.
 
     Subscriptions:
+    TODO: need to verify these two topic names and message types with the actual publishers
       /behavior/do_plant (std_msgs/Empty) — triggers the sequence from IDLE
       seedling_dropped (std_msgs/Bool)   — True advances WAIT_SEEDLING
       /arduino_status  (std_msgs/String) — ACK/DONE/ERR from Arduino via serial_bridge
@@ -45,8 +51,6 @@ class PlantingFsmNode(Node):
       planting_state   (std_msgs/String) — current FSM state name
 
     Parameters:
-      drilling_duration  float  5.0   LINAK_1 down time (s)
-      retract_duration   float  5.0   LINAK_1 up time (s)
       drilling_dwell     float  10.0  dwell in soil (s)
       chute_duration     float  5.0   LINAK_2 down/up time (s)
       shift_duration     float  5.0   stepper shift time (s)
@@ -58,8 +62,6 @@ class PlantingFsmNode(Node):
         super().__init__('planting_fsm')
 
         # ── Parameters ────────────────────────────────────────────────────
-        self.declare_parameter('drilling_duration', 10.0)
-        self.declare_parameter('retract_duration',  10.0)
         self.declare_parameter('drilling_dwell',    10.0)
         self.declare_parameter('chute_duration',    5.0)
         self.declare_parameter('shift_duration',    5.0)
@@ -162,9 +164,8 @@ class PlantingFsmNode(Node):
             self._enter(State.DRILLING_DOWN)        # immediate
 
         elif state == State.DRILLING_DOWN:
-            dur = p('drilling_duration').get_parameter_value().double_value
-            self._linak(f'LINAK,1,DOWN,{dur}')
-            # advances on DONE:LINAK1
+            self._linak('LINAK,1,OUT_MAX')
+            # advances on DONE:LINAK1 (linak_can_node detects position stabilisation)
 
         elif state == State.DRILLING_DWELL:
             dwell = p('drilling_dwell').get_parameter_value().double_value
@@ -173,10 +174,9 @@ class PlantingFsmNode(Node):
                 self._dwell_timer = self.create_timer(dwell, self._dwell_done)
 
         elif state == State.AUGER_RETRACT:
-            dur = p('retract_duration').get_parameter_value().double_value
             self._arduino(f'bldc,out,{auger_rpm}')
-            self._linak(f'LINAK,1,UP,{dur}')
-            # advances on DONE:LINAK1
+            self._linak('LINAK,1,IN_MAX')
+            # advances on DONE:LINAK1 (linak_can_node detects position stabilisation)
 
         elif state == State.SHIFT_TO_CHUTE:
             shift = p('shift_duration').get_parameter_value().double_value

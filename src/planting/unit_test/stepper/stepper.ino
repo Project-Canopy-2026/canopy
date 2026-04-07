@@ -6,9 +6,7 @@
 const int PUL = 9; // OC1A — Timer1 PWM output
 const int DIR = 6; // controls stepper direction
 
-const int STEPS_PER_REV = 1
-wly0278
-600; // 200 base steps * 8 microsteps
+const int STEPS_PER_REV = 1600; // 200 base steps * 8 microsteps
 
 /*Pulse and Direction Connection:
 (1) Optically isolated, high level 4.5-5V, low voltage 0-0.5V.
@@ -55,6 +53,9 @@ void setup()
     OCR1A = 65535;
     // positive is to the right, negative is to the left
     Serial.println("Enter RPM (-150 to 150, negative = CCW):");
+    // digitalWrite(DIR, HIGH);
+    // delayMicroseconds(5);  // DIR setup time before PUL
+    // setRPM(60);            // ← call once here
 }
 
 void loop()

@@ -23,6 +23,9 @@ setup(
             'launch/planting_bringup.launch.py',
             'launch/linak_test.launch.py',
         ]),
+        ('share/' + package_name + '/eds', [
+            '../unit_test/can_tests/LINAK-actuator-v3-1.eds',
+        ]),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -40,6 +43,8 @@ setup(
             'manual_fsm_tester = planting_controller.manual_fsm_tester:main',
             'linak_can_node = unit_test.can_tests.linak_can_node:main',
             'linak_test = unit_test.can_tests.linak_cmd_test_node:main',
+            'planting_fsm_outmax = planting_controller.planting_fsm_outmax:main',
+            'planting_fsm_test = planting_controller.planting_fsm_test_node:main',
         ],
     },
 )

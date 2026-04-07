@@ -6,23 +6,14 @@ import threading
 
 # === Configuration ===
 CHANNEL = 'can0'
-NODE_ID = 0x20 # 32 for auger
-# NODE_ID = 0x21 #33 for chute
+NODE_ID = 0x20 # 33 for chute
 COB_ID_RPDO1 = 0x200 + NODE_ID
 BOOTUP_COB_ID = 0x700 + NODE_ID
-HEARTBEAT_PRODUCER_ID = 0x701  # Master heartbeat ID
+HEARTBEAT_PRODUCER_ID = 0x701
 HEARTBEAT_TIME_MS = 100
 
 bootup_received = threading.Event()
 stop_heartbeat = threading.Event()
-
-# def monitor_bootup():
-#     """Listen for 0x720 boot-up message from actuator."""
-#     def on_message(msg):
-#         if msg.arbitration_id == BOOTUP_COB_ID and msg.data == b'\x00':
-#             print("Actuator boot-up message received.")
-#             bootup_received.set()
-#     network.subscribe(on_message)
 
 def send_actuator_command(position_code):
     """Send 8-byte RPDO message."""
@@ -48,25 +39,12 @@ def heartbeat_loop():
 network = canopen.Network()
 network.connect(channel=CHANNEL, bustype='socketcan')
 
-
-# === Wait for boot-up ===
-# monitor_thread = threading.Thread(target=monitor_bootup)
-# monitor_thread.start()
-
-# print("Waiting for actuator boot-up...")
-# if not bootup_received.wait(timeout=5):
-#     print(" Boot-up not received. Check power and CAN wiring.")
-#     network.disconnect()
-#     exit(1)
-
 # === Add node ===
-node = canopen.RemoteNode(NODE_ID, 'LINAK-actuator-v3-1.eds')
+import os
+eds_path = os.path.join(os.path.dirname(__file__), 'LINAK-actuator-v3-1.eds')
+node = canopen.RemoteNode(NODE_ID, eds_path)
 network.add_node(node)
 
-# === Start sending heartbeat ===
-# heartbeat_thread = threading.Thread(target=heartbeat_loop)
-# heartbeat_thread.daemon = True
-# heartbeat_thread.start()
 network.send_message(HEARTBEAT_PRODUCER_ID, [0x05])
 
 # === Set heartbeat expectation (consumer heartbeat time) ===
@@ -96,10 +74,10 @@ send_actuator_command(64256)
 time.sleep(1)
 
 send_actuator_command(500)
-# === RUN OUT ===
-print("⬆️  RUN OUT...")
-send_actuator_command(64257)
-time.sleep(5)
+# # === RUN OUT ===
+# print("⬆️  RUN OUT...")
+# send_actuator_command(64257)
+# time.sleep(5)
 
 # # === STOP ===
 # print("STOP...")
@@ -108,8 +86,8 @@ time.sleep(5)
 
 # === RUN IN ===
 print("⬇️  RUN IN...")
-send_actuator_command(64258)
-time.sleep(5)
+send_actuator_command(150)
+time.sleep(10)
 
 # === Final STOP ===
 print("Final STOP...")
