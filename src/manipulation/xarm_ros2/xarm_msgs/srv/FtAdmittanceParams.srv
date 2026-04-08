@@ -1,0 +1,19 @@
+# This format is suitable for the following services
+#   - set_ft_sensor_admittance_parameters
+
+# task frame (0: base frame. 1: tool frame)
+int16 coord
+# a 6d vector of 0s and 1s. 1 means that robot will be admittance in the corresponding axis of the task frame.
+int16[] c_axis
+
+# 6d vector, mass. (kg)
+float32[] m
+# 6d vector, stiffness coefficient
+float32[] k
+# 6d vector, damping coefficient
+float32[] b
+
+---
+
+int16 ret
+string message

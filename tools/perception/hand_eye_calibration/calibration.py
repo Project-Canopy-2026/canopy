@@ -36,7 +36,8 @@ from tf2_ros import Buffer, TransformListener
 # ChArUco board configuration — loaded from config file
 # ---------------------------------------------------------------------------
 # Load configuration from charuco_board.yaml
-config_path = Path(__file__).parent.parent / "easy_handeye2" / "easy_handeye2" / "config" / "charuco_board.yaml"
+# config_path = Path(__file__).parent.parent / "easy_handeye2" / "easy_handeye2" / "config" / "charuco_board.yaml"
+config_path = "/home/teamj/dev/ros2_ws/src/canopy/tools/perception/hand_eye_calibration/charuco_board.yaml"
 with open(config_path, 'r') as f:
     charuco_config = yaml.safe_load(f)['charuco']
 
@@ -79,7 +80,7 @@ EEF_FRAME  = "link_eef"         # end-effector / camera mount
 # ---------------------------------------------------------------------------
 # ROS2 topics — matches the RealSense topics used in pot_detection_node.py
 # ---------------------------------------------------------------------------
-IMAGE_TOPIC       = "/camera/camera/color/image_rect_raw"
+IMAGE_TOPIC       = "/camera/camera/color/image_raw"
 CAMERA_INFO_TOPIC = "/camera/camera/color/camera_info"
 
 # ---------------------------------------------------------------------------
@@ -105,13 +106,6 @@ def mat_from_tf(tf_msg):
     T[:3,  3] = [t.x, t.y, t.z]
     return T
 
-
-def decompose(T):
-    """Return (rvec, tvec) from a 4x4 homogeneous matrix (for cv2.calibrateHandEye)."""
-    R = T[:3, :3]
-    t = T[:3,  3]
-    rvec, _ = cv2.Rodrigues(R)
-    return rvec.flatten(), t
 
 
 def save_result(T_hand_to_cam: np.ndarray):
@@ -139,12 +133,22 @@ class HandEyeCalibrator(Node):
     def __init__(self):
         super().__init__("hand_eye_calibrator")
 
-        # ChArUco detector setup (legacy OpenCV < 4.7 API)
-        self.aruco_dict  = cv2.aruco.getPredefinedDictionary(ARUCO_DICT)
-        self.board_params = cv2.aruco.DetectorParameters_create()
-        self.board = cv2.aruco.CharucoBoard_create(
-            SQUARES_X, SQUARES_Y, SQUARE_LENGTH, MARKER_LENGTH, self.aruco_dict
-        )
+        # ChArUco detector setup — supports both OpenCV < 4.7 (old API) and >= 4.7 (new API)
+        self.aruco_dict = cv2.aruco.getPredefinedDictionary(ARUCO_DICT)
+        try:
+            # OpenCV 4.7+ new API
+            self.board = cv2.aruco.CharucoBoard(
+                (SQUARES_X, SQUARES_Y), SQUARE_LENGTH, MARKER_LENGTH, self.aruco_dict
+            )
+            self.charuco_detector = cv2.aruco.CharucoDetector(self.board)
+            self._use_new_aruco_api = True
+        except AttributeError:
+            # Legacy OpenCV < 4.7
+            self.board_params = cv2.aruco.DetectorParameters_create()
+            self.board = cv2.aruco.CharucoBoard_create(
+                SQUARES_X, SQUARES_Y, SQUARE_LENGTH, MARKER_LENGTH, self.aruco_dict
+            )
+            self._use_new_aruco_api = False
 
         # TF
         self.tf_buffer   = Buffer()
@@ -192,17 +196,23 @@ class HandEyeCalibrator(Node):
         Also returns the annotated frame for display.
         """
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        corners, ids, _ = cv2.aruco.detectMarkers(
-            gray, self.aruco_dict, parameters=self.board_params
-        )
-
         vis = frame.copy()
-        if ids is None or len(ids) == 0:
-            return None, None, vis
 
-        ret, charuco_corners, charuco_ids = cv2.aruco.interpolateCornersCharuco(
-            corners, ids, gray, self.board
-        )
+        if self._use_new_aruco_api:
+            # OpenCV 4.7+ path
+            charuco_corners, charuco_ids, _, _ = self.charuco_detector.detectBoard(gray)
+        else:
+            # Legacy OpenCV < 4.7 path
+            corners, ids, _ = cv2.aruco.detectMarkers(
+                gray, self.aruco_dict, parameters=self.board_params
+            )
+            if ids is None or len(ids) == 0:
+                return None, None, vis
+            # Pass intrinsics for better subpixel accuracy
+            _, charuco_corners, charuco_ids = cv2.aruco.interpolateCornersCharuco(
+                corners, ids, gray, self.board, self.camera_matrix, self.dist_coeffs
+            )
+
         if charuco_corners is None or charuco_ids is None or len(charuco_ids) < 4:
             return None, None, vis
 
@@ -234,11 +244,14 @@ class HandEyeCalibrator(Node):
     # ------------------------------------------------------------------
     def capture_sample(self) -> bool:
         """Try to capture one calibration sample. Returns True on success."""
-        if self.latest_frame is None or self.camera_matrix is None:
+        with self._frame_lock:
+            frame = self.latest_frame.copy() if self.latest_frame is not None else None
+
+        if frame is None or self.camera_matrix is None:
             print("[!] No image or camera info yet.")
             return False
 
-        rvec_t2c, tvec_t2c, _ = self._detect_charuco(self.latest_frame)
+        rvec_t2c, tvec_t2c, _ = self._detect_charuco(frame)
         if rvec_t2c is None:
             print("[!] ChArUco board not detected in current frame.")
             return False
@@ -274,8 +287,8 @@ class HandEyeCalibrator(Node):
     def run_calibration(self):
         """Solve AX=XB and print / save the result."""
         n = len(self.R_gripper2base)
-        if n < 3:
-            print(f"[!] Need at least 3 samples (have {n}). Collect more poses.")
+        if n < 10:
+            print(f"[!] Need at least 10 samples (have {n}). Collect more poses.")
             return
 
         print(f"\nRunning hand-eye calibration with {n} samples ...")
@@ -413,8 +426,11 @@ class HandEyeCalibrator(Node):
         print("  q/ESC  — quit\n")
 
         # Wait for camera info before starting (executor spins in background)
+        printed_wait = False
         while self.camera_matrix is None and rclpy.ok():
-            print("Waiting for camera info...")
+            if not printed_wait:
+                print("Waiting for camera info...")
+                printed_wait = True
             time.sleep(0.1)
 
         cv2.namedWindow("Hand-Eye Calibration", cv2.WINDOW_NORMAL)

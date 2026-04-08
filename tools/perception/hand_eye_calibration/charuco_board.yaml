@@ -1,0 +1,6 @@
+charuco:
+  squares_x: 5
+  squares_y: 4
+  square_length: 0.048
+  marker_length: 0.036
+  aruco_dict: "DICT_4X4_100"
