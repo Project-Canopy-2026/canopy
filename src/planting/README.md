@@ -31,22 +31,34 @@ src/planting/
 │   │   ├── serial_bridge.py            ← bridges /arduino_cmd ↔ serial ↔ /arduino_status
 │   │   ├── planting_fsm.py             ← FSM using timed DOWN/UP commands for LINAK_1
 │   │   ├── planting_fsm_outmax.py      ← FSM using OUT_MAX/IN_MAX (position-based) for LINAK_1
-│   │   └── manual_fsm_tester.py        ← interactive CLI for serial_bridge + FSM
+│   │   ├── manual_fsm_tester.py        ← interactive CLI for serial_bridge + FSM
+│   │   ├── linak_can_node.py           ← CANopen node for both LINAK actuators (can0 @ 125 kbps)
+│   │   └── LINAK-actuator-v3-1.eds
 │   └── launch/
 │       ├── planting_bringup.launch.py  ← serial bridge + FSM
 │       └── linak_test.launch.py        ← linak_can_node + linak_cmd_test_node
 ├── unit_test/
 │   ├── planting_fsm_test_node.py       ← interactive tester for planting_fsm_outmax
 │   └── can_tests/
-│       ├── linak_can_node.py           ← CANopen node for both LINAK actuators (can0 @ 125 kbps)
 │       ├── linak_cmd_test_node.py      ← interactive CLI tester for linak_can_node
-│       ├── can_tests.py
-│       └── LINAK-actuator-v3-1.eds
+│       └── can_tests.py
 └── README.md
 ```
-
-
-## Full FSM Test (planting_fsm_outmax)
+## Full FSM Haven't Tested from launch file
+### Terminal 1    
+```bash
+  source /opt/ros/humble/setup.bash
+  colcon build --packages-select planting_controller
+  source install/setup.bash
+  ros2 launch planting_controller planting_bringup.launch.py
+```
+### Terminal 2 (after you see "Both LINAK actuators initialised")
+```bash
+  source /opt/ros/humble/setup.bash
+  source install/setup.bash
+  ros2 run planting_controller planting_fsm_test
+```
+## Full FSM Test (planting_fsm)
 
 Tests the full planting sequence end-to-end with all hardware: Arduino (BLDC + stepper via serial) and both LINAK actuators (via CAN).
 
@@ -212,7 +224,7 @@ ros2 launch planting_controller linak_test.launch.py
 
 Starts `linak_can_node` and `linak_test` (interactive CLI in an xterm).
 
-> **Note:** `linak_can_node` looks for `LINAK-actuator-v3-1.eds` in its working directory. If you see an EDS-not-found error, run the launch from `src/planting/unit_test/can_tests/`, or copy the EDS file to the directory you launch from.
+> **Note:** `linak_can_node` finds `LINAK-actuator-v3-1.eds` automatically — it checks the ament share directory (after `colcon build`) and falls back to the directory alongside the source file.
 
 ### Step 4 — CLI commands
 

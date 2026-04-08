@@ -12,14 +12,16 @@ def on_output(event: ProcessIO, trigger_str: str, actions):
         return actions
     return []
 
-
+# I created  the rule at /etc/udev/rules.d/99-arduino.rules: SUBSYSTEM=="tty", ATTRS{idVendor}=="2341", SYMLINK+="arduino" and 
+# applied it with "sudo udevadm control --reload-rules && sudo udevadm trigger"
+# so the parameters can be parameters=[{'port': '/dev/arduino', 'baudrate': 115200}] for planting arduino
 serial_bridge = Node(
     package='planting_controller',
     executable='serial_bridge',
     name='serial_bridge',
     output='screen',
     parameters=[{
-        'port': '/dev/ttyACM0',
+        'port': '/dev/arduino',
         'baudrate': 115200
     }]
 )
@@ -71,7 +73,8 @@ def generate_launch_description():
                 on_stdout=lambda event: on_output(
                     event,
                     'Both LINAK actuators initialised',
-                    [planting_fsm, planting_fsm_test]
+                    # [planting_fsm, planting_fsm_test]
+                    [planting_fsm]
                 ),
             )
         ),
