@@ -9,6 +9,8 @@ from std_srvs.srv import Trigger
 from manipulation_pkg import arm_config as cfg
 from manipulation_pkg.planner_actions import Planner
 
+from geometry_msgs.msg import PointStamped
+
 
 class ManipulationPlannerNode(Node):
     def __init__(self):
@@ -33,6 +35,13 @@ class ManipulationPlannerNode(Node):
 
         self.get_logger().info('All ready. Call /planner/trigger to start.')
 
+        self.call_detection = self.create_publisher(Bool, 'behavior/enable_pot_detection', 10)
+        
+        self.create_subscription(PointStamped, 'pot/center_point', self.pot_center_callback(), 10)
+
+        self.pot_center = None
+
+
     def trigger_cb(self, request, response):
         if self.should_run:
             response.success = False
@@ -42,6 +51,11 @@ class ManipulationPlannerNode(Node):
             response.success = True
             response.message = 'Sequence triggered'
         return response
+
+
+    def pot_center_callback(self, msg: PointStamped):
+        self.pot_center = msg
+
 
     def run_pick_and_place(self):
         self.logger.info('=== Starting pick and place ===')
@@ -60,6 +74,13 @@ class ManipulationPlannerNode(Node):
         if not self.planner.open_gripper():
             self.logger.error('Failed at step 2')
             return False
+
+        # run pot detector
+        # call a few times?
+        self.call_detection.publish(True)
+        
+        # update grasp pose
+        self.grasp_pose = self.planner.get_grasp_pose(self.pot_center)
 
         # Step 3: move to grasp
         self.logger.info('Step 3: Grasp Move (Pilz LIN)...')

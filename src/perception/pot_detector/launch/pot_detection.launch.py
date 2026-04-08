@@ -9,7 +9,7 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 def generate_launch_description():
 
     realsense_driver = Node(
-        package='realsense_driver',
+        package='realsense2_camera',
         executable='realsense2_camera_node',
         name='realsense2_camera_node',
         output='screen',

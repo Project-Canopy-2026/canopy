@@ -1,6 +1,9 @@
 import math
 import time
 import rclpy
+import numpy as np
+from scipy.spatial.transform import Rotation as Rot
+
 from rclpy.action import ActionClient
 from std_srvs.srv import Trigger
 from geometry_msgs.msg import Pose
@@ -12,6 +15,7 @@ from moveit_msgs.msg import (
 from moveit_msgs.action import MoveGroup
 from moveit_msgs.msg import MoveItErrorCodes
 from shape_msgs.msg import SolidPrimitive
+from moveit.planning import MoveItPy
 
 from manipulation_pkg import robot_config as cfg
 
@@ -35,6 +39,10 @@ class Planner:
         self.move_client.wait_for_server()
         self._wait_for_services()
         self.logger.info('Planner ready.')
+
+        self.moveit = MoveItPy(node_name="moveit_py")
+        self.psm = self.moveit.get_planning_scene_monitor()
+        self.ee_link = "link_tcp" # need to change this
 
     # ── helpers ────────────────────────────────────────────────────────
     def _wait_for_services(self):
@@ -241,3 +249,79 @@ class Planner:
             return False
         self.logger.info(f'Gripper {action} success')
         return True
+
+    # ── grasp pose ──────────────────────────────────────────────────────
+    def get_gripper_pose(self):
+        with self.psm.read_only() as scene:
+            robot_state = scene.current_state
+            robot_state.update()
+            pose = robot_state.get_pose(self.ee_link)
+            return pose
+
+
+    def normalize(self, v, eps=1e-8):
+        norm = np.linalg.norm(v)
+        if norm < eps:
+            raise ValueError("Cannot normalize near-zero vector")
+        return v / norm
+
+
+    def get_grasp_pose(self, pot_center):
+        # pot_center is pointStamp type
+
+        # get gripper cartesian position
+        gripper_pose = self.get_gripper_pose()
+        
+        gripper_pos = np.array([
+            gripper_pose.position.x,
+            gripper_pose.position.y,
+            gripper_pose.position.z
+        ], dtype=float)
+
+        pot_pos = np.array([
+            pot_center.point.x,
+            pot_center.point.y,
+            pot_center.point.z
+        ], dtype=float)
+
+        # calculate vector from pot to gripper
+        grasp_vector = pot_pos - gripper_pos
+
+        # approaching axis
+        z_gripper_axis = self.normalize(grasp_vector)
+
+        # sideways axis
+        ref_up=np.array([0.0, 0.0, 1.0], dtype=float)
+
+        x_gripper_axis = np.cross(ref_up, z_gripper_axis)
+
+        # if ref parallel to z axis
+        if np.linalg.norm(x_gripper_axis) < 1e-8:
+            ref_up = np.array([1.0, 0.0, 0.0], dtype=float)
+            x_gripper_axis = np.cross(ref_up, z_gripper_axis)
+        
+        x_gripper_axis = self.normalize(x_gripper_axis)
+
+        # remaining axis
+        y_gripper_axis = self.normalize(np.cross(z_gripper_axis, x_gripper_axis))
+        
+        # renormalize x to make sure orthogonal
+        x_gripper_axis = self.normalize(np.cross(y_gripper_axis, z_gripper_axis))
+
+         # rotation matrix
+        R = np.column_stack((x_gripper_axis, y_gripper_axis, z_gripper_axis))
+
+        # convert to quaternion [x,y,z,w]
+        orientation = Rot.from_matrix(R).as_quat()
+
+        # output needs to be same as make_pose output (x,y,z position & quaternion)
+        grasp_pose = Pose()
+        grasp_pose.position.x = float(pot_center.point.x)
+        grasp_pose.position.y = float(pot_center.point.y)
+        grasp_pose.position.z = float(pot_center.point.z)
+        grasp_pose.orientation.x = orientation[0]
+        grasp_pose.orientation.y = orientation[1]
+        grasp_pose.orientation.z = orientation[2]
+        grasp_pose.orientation.w = orientation[3]
+
+        return grasp_pose
