@@ -17,28 +17,25 @@
 
 ```
 src/planting/
-├── bldc/
-│   └── bldc.ino                        ← standalone BLDC test sketch
-├── stepper/
-│   └── stepper.ino                     ← standalone stepper test sketch
-├── planting_arduino/
-│   └── planting_arduino.ino            ← combined BLDC + stepper sketch (used in production)
 ├── planting_controller/                ← ROS2 Python package
 │   ├── package.xml
 │   ├── setup.py
 │   ├── planting_controller/
 │   │   ├── __init__.py
+│   │   ├── planting_arduino.ino        ← combined BLDC + stepper sketch (used in production)
 │   │   ├── serial_bridge.py            ← bridges /arduino_cmd ↔ serial ↔ /arduino_status
 │   │   ├── planting_fsm.py             ← FSM using timed DOWN/UP commands for LINAK_1
-│   │   ├── planting_fsm_outmax.py      ← FSM using OUT_MAX/IN_MAX (position-based) for LINAK_1
-│   │   ├── manual_fsm_tester.py        ← interactive CLI for serial_bridge + FSM
+│   │   ├── planting_fsm_test_node.py   ← interactive tester for the planting FSM
 │   │   ├── linak_can_node.py           ← CANopen node for both LINAK actuators (can0 @ 125 kbps)
 │   │   └── LINAK-actuator-v3-1.eds
 │   └── launch/
 │       ├── planting_bringup.launch.py  ← serial bridge + FSM
 │       └── linak_test.launch.py        ← linak_can_node + linak_cmd_test_node
 ├── unit_test/
-│   ├── planting_fsm_test_node.py       ← interactive tester for planting_fsm_outmax
+│   ├── bldc/
+│   │   └── bldc.ino                    ← standalone BLDC test sketch
+│   ├── stepper/
+│   │   └── stepper.ino                 ← standalone stepper test sketch
 │   └── can_tests/
 │       ├── linak_cmd_test_node.py      ← interactive CLI tester for linak_can_node
 │       └── can_tests.py
@@ -64,7 +61,7 @@ Tests the full planting sequence end-to-end with all hardware: Arduino (BLDC + s
 
 ### Step 1 — Flash the Arduino
 
-Open `src/planting/planting_arduino/planting_arduino.ino` in the Arduino IDE and upload to the board (baud rate: 115200).
+Open `src/planting/planting_controller/planting_controller/planting_arduino.ino` in the Arduino IDE and upload to the board (baud rate: 115200).
 
 ### Step 2 — Serial port permissions (once)
 
