@@ -23,7 +23,7 @@ Status replies on /linak_status
 
 ROS parameters
 ──────────────
-  can_channel          str    "can0"
+  can_channel          str    "can1"
   can_bitrate          int    125000
   node_id_1            int    0x20    (LINAK 1 — auger)
   node_id_2            int    0x21    (LINAK 2 — chute)
@@ -449,7 +449,7 @@ class LinakDriver(Node):
         super().__init__("linak_can_node")
 
         # ── Parameters ────────────────────────────────────────────────────
-        self.declare_parameter("can_channel",         "can0")
+        self.declare_parameter("can_channel",         "can1")
         self.declare_parameter("can_bitrate",         125000)
         self.declare_parameter("node_id_1",           0x20)
         self.declare_parameter("node_id_2",           0x21)
