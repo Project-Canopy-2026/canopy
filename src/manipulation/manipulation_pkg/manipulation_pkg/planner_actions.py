@@ -17,6 +17,8 @@ from moveit_msgs.msg import MoveItErrorCodes
 from shape_msgs.msg import SolidPrimitive
 from moveit.planning import MoveItPy
 
+from xarm_msgs.srv import PlanPose, PlanExec, PlanJoint
+
 from manipulation_pkg import robot_config as cfg
 
 
@@ -42,7 +44,12 @@ class Planner:
 
         self.moveit = MoveItPy(node_name="moveit_py")
         self.psm = self.moveit.get_planning_scene_monitor()
-        self.ee_link = "link_tcp" # need to change this
+
+        self.ee_link = "tool_tcp"
+        self.arm_group_name = "xarm7"
+
+        self.plan_joint = self.create_client(PlanJoint, '/xarm_joint_plan')
+        self.plan_exec = self.create_client(PlanExec, '/xarm_exec_plan')
 
     # ── helpers ────────────────────────────────────────────────────────
     def _wait_for_services(self):
@@ -325,3 +332,61 @@ class Planner:
         grasp_pose.orientation.w = orientation[3]
 
         return grasp_pose
+
+    
+    def grasp_pose_to_joint_values(self, grasp_pose):
+    with self.psm.read_only() as scene:
+        robot_state = scene.current_state
+        robot_state.update()
+
+        jmg = robot_state.get_joint_model_group(self.arm_group_name)
+        if jmg is None:
+            self.get_logger().error(f"Joint model group not found: {self.arm_group_name}")
+            return None
+
+        ok = robot_state.set_from_ik(
+            jmg,
+            grasp_pose,
+            self.ee_link,
+            0.1,
+        )
+
+        if not ok:
+            self.get_logger().warn("IK failed")
+            return None
+
+        joint_values = robot_state.get_joint_group_positions(self.arm_group_name)
+        return list(joint_values)
+
+
+    # ── deterministic planner function ────────────────────────────────────────────────────
+
+    def _call_plan_joint(self, joint_angles):
+        """Sends a list of 7 joint angles to the MoveIt Joint Planner."""
+        self.get_logger().info('Waiting for /xarm_joint_plan service...')
+        self.plan_joint.wait_for_service()
+        
+        req = PlanJoint.Request()
+        req.target = joint_angles
+        
+        # Send the request
+        future = self.plan_joint.call_async(req)
+        rclpy.spin_until_future_complete(self, future)
+        
+        if future.result() is not None and future.result().success:
+            self.get_logger().info('Joint plan successful!')
+            return True
+        else:
+            self.get_logger().error('Failed to generate joint plan.')
+            return False
+
+    def _call_plan_exec(self):
+        req = PlanExec.Request()
+        req.wait = True
+        future = self.plan_exec.call_async(req)
+        rclpy.spin_until_future_complete(self, future)
+        result = future.result()
+        if not result.success:
+            self.get_logger().error('PlanExec failed')
+            return False
+        return True

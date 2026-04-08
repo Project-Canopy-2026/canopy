@@ -82,19 +82,29 @@ class ManipulationPlannerNode(Node):
         # update grasp pose
         self.grasp_pose = self.planner.get_grasp_pose(self.pot_center)
 
-        # Step 3: move to grasp
-        self.logger.info('Step 3: Grasp Move (Pilz LIN)...')
-        success = self.planner.move_cartesian(
-            self.grasp_pose,
-            pipeline='pilz_industrial_motion_planner',
-            planner='LIN'
-        )
-        if not success:
-            self.logger.warn('Pilz LIN failed, falling back to OMPL...')
-            success = self.planner.move_cartesian(self.grasp_pose)
-        if not success:
-            self.logger.error('Failed at step 3')
-            return False
+        # get joint values of grasp pose
+        grasp_joints = grasp_pose_to_joint_values(self.grasp_pose)
+
+        # hard coded move to grasp
+        self.get_logger().info('Step 3: Moving towards to grasp...')
+        if not self._call_plan_joint(grasp_joints):
+            return
+        if not self._call_plan_exec():
+            return
+
+        # planner move to grasp
+        # self.logger.info('Step 3: Grasp Move (Pilz LIN)...')
+        # success = self.planner.move_cartesian(
+        #     self.grasp_pose,
+        #     pipeline='pilz_industrial_motion_planner',
+        #     planner='LIN'
+        # )
+        # if not success:
+        #     self.logger.warn('Pilz LIN failed, falling back to OMPL...')
+        #     success = self.planner.move_cartesian(self.grasp_pose)
+        # if not success:
+        #     self.logger.error('Failed at step 3')
+        #     return False
 
         # Step 4: close gripper
         self.logger.info('Step 4: Close gripper...')

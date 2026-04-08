@@ -23,24 +23,24 @@
   <!-- ========================= -->
   <!-- CUSTOM GRIPPER MOUNT POSE -->
   <!-- MODIFY THESE -->
-  <!-- Pose of your gripper base relative to xArm link_eef -->
+  <!-- Pose of the end of gripper base relative to xArm link_eef -->
   <!-- ========================= -->
-  <xacro:arg name="gripper_xyz" default="0.000 0.000 0.040"/>
+  <xacro:arg name="gripper_xyz" default="0.000 0.000 0.15"/>
   <xacro:arg name="gripper_rpy" default="0 0 0"/>
 
   <!-- ========================= -->
   <!-- CUSTOM CAMERA MOUNT POSE -->
-  <!-- MODIFY THESE -->
-  <!-- Pose of D405 body relative to xArm link_eef -->
+  <!-- Pose of Realsense D405 body relative to xArm link_eef -->
+  <!-- Derived from hand eye calibration -->
   <!-- ========================= -->
-  <xacro:arg name="camera_xyz" default="0.0 0.07 0.06"/>
-  <xacro:arg name="camera_rpy" default="0 0 0"/>
+  <xacro:arg name="camera_xyz" default="-0.009581 -0.061361 0.074752"/>
+  <xacro:arg name="camera_rpy" default="0.00231 0.01463 0.01649"/>
 
   <!-- ========================= -->
-  <!-- Optional simple geometry sizes -->
-  <!-- MODIFY THESE if your rough size is different -->
+  <!-- Simple geometry sizes -->
+  <!-- gripper_size includes gripper and fingers -->
   <!-- ========================= -->
-  <xacro:arg name="gripper_size" default="0.080 0.050 0.100"/>
+  <xacro:arg name="gripper_size" default="0.105 0.070 0.185"/>
   <xacro:arg name="camera_size" default="0.042 0.042 0.023"/>
 
   <!-- ========================= -->
@@ -112,14 +112,14 @@
     <origin xyz="$(arg gripper_xyz)" rpy="$(arg gripper_rpy)"/>
   </joint>
 
-  <!-- Optional TCP frame at the front of the gripper -->
-  <!-- MODIFY THIS if you want a better tool center point -->
+  <!-- TCP frame at the front of the gripper -->
+  <!-- center of fingers relative to end of gripper -->
   <link name="$(arg prefix)tool_tcp"/>
 
   <joint name="$(arg prefix)tool_tcp_joint" type="fixed">
     <parent link="$(arg prefix)custom_gripper_base"/>
     <child link="$(arg prefix)tool_tcp"/>
-    <origin xyz="0.080 0.000 0.000" rpy="0 0 0"/>
+    <origin xyz="0.0 0.0 0.015" rpy="0 0 0"/>
   </joint>
 
   <!-- ===================================================== -->
