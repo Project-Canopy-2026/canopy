@@ -12,14 +12,14 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 
 def generate_launch_description():
 
-    xacro_file = os.path.join(
-        get_package_share_directory('manipulation_pkg'),
-        'urdf',
-        'xarm7_gripper_camera.urdf.xacro'
-    )
+    # xacro_file = os.path.join(
+    #     get_package_share_directory('manipulation_pkg'),
+    #     'urdf',
+    #     'xarm7_gripper_camera.urdf.xacro'
+    # )
 
     config = os.path.join(
-        get_package_share_directory('robot_bringup'),
+        get_package_share_directory('manipulation_pkg'),
         'config',
         'robot_params.yaml'
     )
@@ -34,7 +34,7 @@ def generate_launch_description():
         launch_arguments={
             'robot_ip': '192.168.1.201',
             'hw_ns': 'xarm',
-            'xacro_file': PathJoinSubstitution([FindPackageShare('manipulation_pkg'), 'urdf', 'xarm7_gripper_camera.urdf.xacro']),
+            #'xacro_file': PathJoinSubstitution([FindPackageShare('manipulation_pkg'), 'urdf', 'xarm7_gripper_camera.urdf.xacro']),
         }.items(),
     )
 
@@ -61,7 +61,7 @@ def generate_launch_description():
     perception_node = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
-                get_package_share_directory('[pot_detector]'),
+                get_package_share_directory('pot_detector'),
                 'launch',
                 'pot_detection.launch.py'
             )

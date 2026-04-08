@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//home/teamj/dev/ros2_ws/src/**)",
+      "Bash(sudo apt-get:*)",
+      "Read(//opt/ros/humble/share/apriltag_ros/launch/**)",
+      "Read(//home/teamj/dev/ros2_ws/install/apriltag_ros/share/apriltag_ros/**)"
+    ],
+    "additionalDirectories": [
+      "/home/teamj/dev/ros2_ws/build/easy_handeye2_msgs"
+    ]
+  }
+}

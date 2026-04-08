@@ -6,20 +6,21 @@ from scipy.spatial.transform import Rotation as Rot
 
 from rclpy.action import ActionClient
 from std_srvs.srv import Trigger
-from geometry_msgs.msg import Pose
+from geometry_msgs.msg import Pose, PoseStamped
 from moveit_msgs.msg import (
     CollisionObject, PlanningScene, Constraints,
     OrientationConstraint, PositionConstraint,
-    BoundingVolume, JointConstraint
+    BoundingVolume, JointConstraint, RobotState
 )
 from moveit_msgs.action import MoveGroup
 from moveit_msgs.msg import MoveItErrorCodes
+from moveit_msgs.srv import GetPositionIK
 from shape_msgs.msg import SolidPrimitive
-from moveit.planning import MoveItPy
+import tf2_ros
 
 from xarm_msgs.srv import PlanPose, PlanExec, PlanJoint
 
-from manipulation_pkg import robot_config as cfg
+from manipulation_pkg import arm_config as cfg
 
 
 class Planner:
@@ -39,17 +40,21 @@ class Planner:
 
         self.logger.info('Waiting for MoveGroup action server...')
         self.move_client.wait_for_server()
-        self._wait_for_services()
+        #self._wait_for_services()
         self.logger.info('Planner ready.')
 
-        self.moveit = MoveItPy(node_name="moveit_py")
-        self.psm = self.moveit.get_planning_scene_monitor()
-
         self.ee_link = "tool_tcp"
-        self.arm_group_name = "xarm7"
 
-        self.plan_joint = self.create_client(PlanJoint, '/xarm_joint_plan')
-        self.plan_exec = self.create_client(PlanExec, '/xarm_exec_plan')
+        self.tf_buffer = tf2_ros.Buffer()
+        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, node)
+
+        self.ik_client = node.create_client(GetPositionIK, '/compute_ik')
+        self.logger.info('Waiting for /compute_ik service...')
+        self.ik_client.wait_for_service()
+        # self.arm_group_name = "xarm7"
+
+        # self.plan_joint = self.create_client(PlanJoint, '/xarm_joint_plan')
+        # self.plan_exec = self.create_client(PlanExec, '/xarm_exec_plan')
 
     # ── helpers ────────────────────────────────────────────────────────
     def _wait_for_services(self):
@@ -259,11 +264,20 @@ class Planner:
 
     # ── grasp pose ──────────────────────────────────────────────────────
     def get_gripper_pose(self):
-        with self.psm.read_only() as scene:
-            robot_state = scene.current_state
-            robot_state.update()
-            pose = robot_state.get_pose(self.ee_link)
-            return pose
+        try:
+            transform = self.tf_buffer.lookup_transform(
+                cfg.BASE_FRAME, self.ee_link, rclpy.time.Time()
+            )
+        except (tf2_ros.LookupException, tf2_ros.ConnectivityException,
+                tf2_ros.ExtrapolationException) as e:
+            self.logger.error(f'TF lookup failed: {e}')
+            return None
+        pose = Pose()
+        pose.position.x = transform.transform.translation.x
+        pose.position.y = transform.transform.translation.y
+        pose.position.z = transform.transform.translation.z
+        pose.orientation = transform.transform.rotation
+        return pose
 
 
     def normalize(self, v, eps=1e-8):
@@ -335,58 +349,57 @@ class Planner:
 
     
     def grasp_pose_to_joint_values(self, grasp_pose):
-    with self.psm.read_only() as scene:
-        robot_state = scene.current_state
-        robot_state.update()
+        req = GetPositionIK.Request()
+        req.ik_request.group_name = cfg.PLANNING_GROUP
+        req.ik_request.ik_link_name = self.ee_link
+        req.ik_request.avoid_collisions = True
+        req.ik_request.timeout.sec = 1
 
-        jmg = robot_state.get_joint_model_group(self.arm_group_name)
-        if jmg is None:
-            self.get_logger().error(f"Joint model group not found: {self.arm_group_name}")
+        pose_stamped = PoseStamped()
+        pose_stamped.header.frame_id = cfg.BASE_FRAME
+        pose_stamped.pose = grasp_pose
+        req.ik_request.pose_stamped = pose_stamped
+
+        future = self.ik_client.call_async(req)
+        while not future.done():
+            time.sleep(0.01)
+
+        result = future.result()
+        if result.error_code.val != MoveItErrorCodes.SUCCESS:
+            self.logger.warn(f'IK failed with error code {result.error_code.val}')
             return None
 
-        ok = robot_state.set_from_ik(
-            jmg,
-            grasp_pose,
-            self.ee_link,
-            0.1,
-        )
-
-        if not ok:
-            self.get_logger().warn("IK failed")
-            return None
-
-        joint_values = robot_state.get_joint_group_positions(self.arm_group_name)
-        return list(joint_values)
+        return list(result.solution.joint_state.position)
 
 
     # ── deterministic planner function ────────────────────────────────────────────────────
 
-    def _call_plan_joint(self, joint_angles):
-        """Sends a list of 7 joint angles to the MoveIt Joint Planner."""
-        self.get_logger().info('Waiting for /xarm_joint_plan service...')
-        self.plan_joint.wait_for_service()
+    # def _call_plan_joint(self, joint_angles):
+    #     """Sends a list of 7 joint angles to the MoveIt Joint Planner."""
+    #     self.get_logger().info('Waiting for /xarm_joint_plan service...')
+    #     self.plan_joint.wait_for_service()
         
-        req = PlanJoint.Request()
-        req.target = joint_angles
+    #     req = PlanJoint.Request()
+    #     req.target = joint_angles
         
-        # Send the request
-        future = self.plan_joint.call_async(req)
-        rclpy.spin_until_future_complete(self, future)
+    #     # Send the request
+    #     future = self.plan_joint.call_async(req)
+    #     rclpy.spin_until_future_complete(self, future)
         
-        if future.result() is not None and future.result().success:
-            self.get_logger().info('Joint plan successful!')
-            return True
-        else:
-            self.get_logger().error('Failed to generate joint plan.')
-            return False
+    #     if future.result() is not None and future.result().success:
+    #         self.get_logger().info('Joint plan successful!')
+    #         return True
+    #     else:
+    #         self.get_logger().error('Failed to generate joint plan.')
+    #         return False
 
-    def _call_plan_exec(self):
-        req = PlanExec.Request()
-        req.wait = True
-        future = self.plan_exec.call_async(req)
-        rclpy.spin_until_future_complete(self, future)
-        result = future.result()
-        if not result.success:
-            self.get_logger().error('PlanExec failed')
-            return False
-        return True
+    # def _call_plan_exec(self):
+    #     req = PlanExec.Request()
+    #     req.wait = True
+    #     future = self.plan_exec.call_async(req)
+    #     rclpy.spin_until_future_complete(self, future)
+    #     result = future.result()
+    #     if not result.success:
+    #         self.get_logger().error('PlanExec failed')
+    #         return False
+    #     return True

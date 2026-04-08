@@ -37,7 +37,7 @@ class PotDetector(Node):
         
         self.bridge = CvBridge()
         
-        self.model = YOLO('/home/teamj/dev/ros2_ws/src/canopy/src/perception/pot_detector/model/best.pt') # TODO: Change this to the correct path on Jetson
+        self.model = YOLO('src/perception/pot_detector/pot_detector/model/0402_yolo11s/best.pt') # TODO: Change this to the correct path on Jetson
 
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)

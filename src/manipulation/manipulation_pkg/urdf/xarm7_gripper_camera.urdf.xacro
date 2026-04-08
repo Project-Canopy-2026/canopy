@@ -1,3 +1,4 @@
+  <!-- not in use, updated xarm_device.urdf.xacro with gripper and camera instead -->
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="xarm7_with_d405_and_custom_gripper">
 

@@ -10,7 +10,7 @@ from manipulation_pkg import arm_config as cfg
 from manipulation_pkg.planner_actions import Planner
 
 from geometry_msgs.msg import PointStamped
-
+from std_msgs.msg import Bool
 
 class ManipulationPlannerNode(Node):
     def __init__(self):
@@ -20,7 +20,8 @@ class ManipulationPlannerNode(Node):
         self.logger = self.planner.logger
 
         # build poses from config
-        self.grasp_pose = self.planner.make_pose_from_dict(cfg.GRASP_POSE)
+        #self.grasp_pose = self.planner.make_pose_from_dict(cfg.GRASP_POSE)
+        self.grasp_pose = None
 
         # lift: same X,Y,orientation as grasp, only Z changes
         self.lift_pose = self.planner.make_pose(
@@ -28,7 +29,7 @@ class ManipulationPlannerNode(Node):
             cfg.GRASP_POSE['y'],
             cfg.LIFT_POSE['z']
         )
-        self.lift_pose.orientation = self.grasp_pose.orientation
+        #elf.lift_pose.orientation = self.grasp_pose.orientation
 
         self.should_run = False
         self.create_service(Trigger, '/planner/trigger', self.trigger_cb)
@@ -37,7 +38,7 @@ class ManipulationPlannerNode(Node):
 
         self.call_detection = self.create_publisher(Bool, 'behavior/enable_pot_detection', 10)
         
-        self.create_subscription(PointStamped, 'pot/center_point', self.pot_center_callback(), 10)
+        self.create_subscription(PointStamped, 'pot/center_point', self.pot_center_callback, 10)
 
         self.pot_center = None
 
@@ -70,27 +71,37 @@ class ManipulationPlannerNode(Node):
             return False
 
         # Step 2: open gripper
-        self.logger.info('Step 2: Open gripper...')
-        if not self.planner.open_gripper():
-            self.logger.error('Failed at step 2')
-            return False
+        # self.logger.info('Step 2: Open gripper...')
+        # if not self.planner.open_gripper():
+        #     self.logger.error('Failed at step 2')
+        #     return False
 
-        # run pot detector
-        # call a few times?
-        self.call_detection.publish(True)
-        
+        # run pot detector until we get a valid detection
+        while self.pot_center is None:
+            self.logger.info('Running pot detection')
+            self.call_detection.publish(Bool(data=True))
+
+        self.logger.info(f'Pot detected at: {self.pot_center}')
+
         # update grasp pose
         self.grasp_pose = self.planner.get_grasp_pose(self.pot_center)
 
-        # get joint values of grasp pose
-        grasp_joints = grasp_pose_to_joint_values(self.grasp_pose)
+        self.logger.info(f'Grasp pose calculated: {self.grasp_pose}')
 
-        # hard coded move to grasp
-        self.get_logger().info('Step 3: Moving towards to grasp...')
-        if not self._call_plan_joint(grasp_joints):
-            return
-        if not self._call_plan_exec():
-            return
+        # get joint values of grasp pose
+        # grasp_joints = self.planner.grasp_pose_to_joint_values(self.grasp_pose)
+
+        # # hard coded move to grasp
+        # self.logger.info('Step 3:Pre-grasp to grasp joints...')
+        # if not self.planner.move_joints(grasp_joints):
+        #     self.logger.error('Failed at step 3')
+        #     return False
+
+        # self.get_logger().info('Step 3: Moving towards to grasp...')
+        # if not self._call_plan_joint(grasp_joints):
+        #     return
+        # if not self._call_plan_exec():
+        #     return
 
         # planner move to grasp
         # self.logger.info('Step 3: Grasp Move (Pilz LIN)...')
@@ -107,45 +118,45 @@ class ManipulationPlannerNode(Node):
         #     return False
 
         # Step 4: close gripper
-        self.logger.info('Step 4: Close gripper...')
-        if not self.planner.close_gripper():
-            self.logger.error('Failed at step 4')
-            return False
+        # self.logger.info('Step 4: Close gripper...')
+        # if not self.planner.close_gripper():
+        #     self.logger.error('Failed at step 4')
+        #     return False
 
-        # Step 5: lift
-        self.logger.info('Step 5: Lift (Pilz LIN)...')
-        success = self.planner.move_cartesian(
-            self.lift_pose,
-            pipeline='pilz_industrial_motion_planner',
-            planner='LIN',
-            constrained=True,
-            reference_pose=self.grasp_pose
-        )
-        if not success:
-            self.logger.warn('Pilz LIN lift failed, falling back to OMPL...')
-            success = self.planner.move_cartesian(
-                self.lift_pose,
-                constrained=True,
-                reference_pose=self.grasp_pose
-            )
-        if not success:
-            self.logger.error('Failed at step 5')
-            return False
+        # # Step 5: lift
+        # self.logger.info('Step 5: Lift (Pilz LIN)...')
+        # success = self.planner.move_cartesian(
+        #     self.lift_pose,
+        #     pipeline='pilz_industrial_motion_planner',
+        #     planner='LIN',
+        #     constrained=True,
+        #     reference_pose=self.grasp_pose
+        # )
+        # if not success:
+        #     self.logger.warn('Pilz LIN lift failed, falling back to OMPL...')
+        #     success = self.planner.move_cartesian(
+        #         self.lift_pose,
+        #         constrained=True,
+        #         reference_pose=self.grasp_pose
+        #     )
+        # if not success:
+        #     self.logger.error('Failed at step 5')
+        #     return False
 
-        # Step 6: move to drop
-        self.logger.info('Step 6: Drop (joint)...')
-        if not self.planner.move_joints(cfg.DROP_JOINTS_DEG):
-            self.logger.error('Failed at step 6')
-            return False
+        # # Step 6: move to drop
+        # self.logger.info('Step 6: Drop (joint)...')
+        # if not self.planner.move_joints(cfg.DROP_JOINTS_DEG):
+        #     self.logger.error('Failed at step 6')
+        #     return False
 
-        # Step 7: release
-        self.logger.info('Step 7: Release...')
-        if not self.planner.open_gripper():
-            self.logger.error('Failed at step 7')
-            return False
+        # # Step 7: release
+        # self.logger.info('Step 7: Release...')
+        # if not self.planner.open_gripper():
+        #     self.logger.error('Failed at step 7')
+        #     return False
 
-        self.logger.info('=== Pick and place complete ===')
-        return True
+        # self.logger.info('=== Pick and place complete ===')
+        # return True
 
     def run(self):
         while rclpy.ok():
