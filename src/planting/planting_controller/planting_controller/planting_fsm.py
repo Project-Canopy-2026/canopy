@@ -12,6 +12,7 @@ from std_msgs.msg import Bool, Empty, String
 
 class State(enum.Enum):
     IDLE            = 'IDLE'
+    LINAK_HOME      = 'LINAK_HOME'      # both linaks retract to IN_MAX [transition: 5s timer]
     AUGER_SPIN_UP   = 'AUGER_SPIN_UP'   # bldc continuous spin [transition: immediate]
     DRILLING_DOWN   = 'DRILLING_DOWN'   # linak runs out to max position 64255[transition: DONE:LINAK1]
     DRILLING_DWELL  = 'DRILLING_DWELL'  # bldc continuous spin [transition: 10s timer]
@@ -45,26 +46,25 @@ class PlantingFsmNode(Node):
       planting_state   (std_msgs/String) — current FSM state name
 
     Parameters:
-      drilling_duration  float  5.0   LINAK_1 down time (s)
-      retract_duration   float  5.0   LINAK_1 up time (s)
-      drilling_dwell     float  10.0  dwell in soil (s)
-      chute_duration     float  5.0   LINAK_2 down/up time (s)
-      shift_duration     float  5.0   stepper shift time (s)
-      auger_rpm          int    75    BLDC RPM
-      stepper_rpm        int    100   stepper RPM
+      drilling_distance_cm  float  6.0   LINAK_1 down distance (cm)
+      retract_distance_cm   float  6.0   LINAK_1 up distance (cm)
+      drilling_dwell        float  10.0  dwell in soil (s)
+      chute_distance_cm     float  6.0   LINAK_2 down/up distance (cm)
+      shift_distance_cm     float  5.0   stepper travel distance (cm) — speed locked at 270 RPM in firmware
+      auger_rpm             int    75    BLDC RPM
+      (LINAK speed assumed constant at 2.18 cm/s — duration = distance / 2.18)
     """
 
     def __init__(self):
         super().__init__('planting_fsm')
 
         # ── Parameters ────────────────────────────────────────────────────
-        self.declare_parameter('drilling_duration', 10.0)
-        self.declare_parameter('retract_duration',  10.0)
-        self.declare_parameter('drilling_dwell',    10.0)
-        self.declare_parameter('chute_duration',    5.0)
-        self.declare_parameter('shift_duration',    5.0)
-        self.declare_parameter('auger_rpm',         75)
-        self.declare_parameter('stepper_rpm',       100)
+        self.declare_parameter('drilling_distance_cm', 30.0)
+        self.declare_parameter('retract_distance_cm',  30.0)
+        self.declare_parameter('drilling_dwell',       10.0)
+        self.declare_parameter('chute_distance_cm',    15.0)
+        self.declare_parameter('shift_distance_cm',    23.0)
+        self.declare_parameter('auger_rpm',            75)
 
         # ── Publishers ────────────────────────────────────────────────────
         self._arduino_pub = self.create_publisher(String, '/arduino_cmd',   10)
@@ -93,7 +93,7 @@ class PlantingFsmNode(Node):
                     f'do_planting received in state {self._state.value} — ignoring.'
                 )
                 return
-        self._enter(State.AUGER_SPIN_UP)
+        self._enter(State.LINAK_HOME)
 
     def _on_seedling(self, msg: Bool):
         if not msg.data:
@@ -153,17 +153,26 @@ class PlantingFsmNode(Node):
         self._on_enter(new_state)
 
     def _on_enter(self, state: State):
-        p            = self.get_parameter
-        auger_rpm    = p('auger_rpm').get_parameter_value().integer_value
-        stepper_rpm  = p('stepper_rpm').get_parameter_value().integer_value
+        LINAK_SPEED_CM_S = 2.18   # cm/s — used to convert distance → duration
 
-        if state == State.AUGER_SPIN_UP:
+        p         = self.get_parameter
+        auger_rpm = p('auger_rpm').get_parameter_value().integer_value
+
+        if state == State.LINAK_HOME:
+            self._linak('LINAK,1,IN_MAX')
+            self._linak('LINAK,2,IN_MAX')
+            self.get_logger().info('Waiting 5 s for LINAKs to home...')
+            with self._lock:
+                self._dwell_timer = self.create_timer(5.0, self._homing_done)
+            # advances via _homing_done → AUGER_SPIN_UP
+
+        elif state == State.AUGER_SPIN_UP:
             self._arduino(f'bldc,in,{auger_rpm}')
             self._enter(State.DRILLING_DOWN)        # immediate
 
         elif state == State.DRILLING_DOWN:
-            dur = p('drilling_duration').get_parameter_value().double_value
-            self._linak(f'LINAK,1,DOWN,{dur}')
+            dur = p('drilling_distance_cm').get_parameter_value().double_value / LINAK_SPEED_CM_S
+            self._linak(f'LINAK,1,DOWN,{dur:.2f}')
             # advances on DONE:LINAK1
 
         elif state == State.DRILLING_DWELL:
@@ -173,33 +182,33 @@ class PlantingFsmNode(Node):
                 self._dwell_timer = self.create_timer(dwell, self._dwell_done)
 
         elif state == State.AUGER_RETRACT:
-            dur = p('retract_duration').get_parameter_value().double_value
+            dur = p('retract_distance_cm').get_parameter_value().double_value / LINAK_SPEED_CM_S
             self._arduino(f'bldc,out,{auger_rpm}')
-            self._linak(f'LINAK,1,UP,{dur}')
+            self._linak(f'LINAK,1,UP,{dur:.2f}')
             # advances on DONE:LINAK1
 
         elif state == State.SHIFT_TO_CHUTE:
-            shift = p('shift_duration').get_parameter_value().double_value
+            shift_mm = p('shift_distance_cm').get_parameter_value().double_value * 10.0
             self._arduino('bldc,stop')
-            self._arduino(f'stepper,left,{stepper_rpm},{int(shift)}')
+            self._arduino(f'stepper,left,{shift_mm:.1f}')
             # advances on DONE:STEPPER
 
         elif state == State.WAIT_SEEDLING:
             self.get_logger().info('Waiting for seedling_dropped...')
 
         elif state == State.CHUTE_DOWN:
-            dur = p('chute_duration').get_parameter_value().double_value
-            self._linak(f'LINAK,2,DOWN,{dur}')
+            dur = p('chute_distance_cm').get_parameter_value().double_value / LINAK_SPEED_CM_S
+            self._linak(f'LINAK,2,DOWN,{dur:.2f}')
             # advances on DONE:LINAK2
 
         elif state == State.CHUTE_RETRACT:
-            dur = p('chute_duration').get_parameter_value().double_value
-            self._linak(f'LINAK,2,UP,{dur}')
+            dur = p('chute_distance_cm').get_parameter_value().double_value / LINAK_SPEED_CM_S
+            self._linak(f'LINAK,2,UP,{dur:.2f}')
             # advances on DONE:LINAK2
 
         elif state == State.SHIFT_TO_AUGER:
-            shift = p('shift_duration').get_parameter_value().double_value
-            self._arduino(f'stepper,right,{stepper_rpm},{int(shift)}')
+            shift_mm = p('shift_distance_cm').get_parameter_value().double_value * 10.0
+            self._arduino(f'stepper,right,{shift_mm:.1f}')
             # advances on DONE:STEPPER
 
         elif state == State.COMPLETE:
@@ -210,6 +219,13 @@ class PlantingFsmNode(Node):
         elif state == State.FAULT:
             self._arduino('stop')                   # emergency stop all Arduino motors
             self.get_logger().error('FAULT — emergency stop issued. Restart node to reset.')
+
+    def _homing_done(self):
+        with self._lock:
+            if self._dwell_timer is not None:
+                self._dwell_timer.cancel()
+                self._dwell_timer = None
+        self._enter(State.DRILLING_DOWN)
 
     def _dwell_done(self):
         # ROS2 timers repeat — cancel immediately after first fire

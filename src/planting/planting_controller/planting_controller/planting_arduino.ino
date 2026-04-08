@@ -6,17 +6,17 @@
 //  Stepper datasheet: https://www.omc-stepperonline.com/icl-series-nema-23-integrated-closed-loop-stepper-motor-3-1nm-439oz-in-20-50vdc-w-14-bit-encoder-icld57-31
 //
 //  Command protocol (newline-terminated strings, case-insensitive):
-//    "bldc,in,<rpm>"              → bldc_spin("in", rpm)  *in = CW in auger perspective*
-//    "bldc,out,<rpm>"             → bldc_spin("out", rpm)
-//    "bldc,stop"                  → bldc_stop()
-//    "stepper,left,<rpm>,<s>"     → stepper_move("left",  rpm, s*1000)
-//    "stepper,right,<rpm>,<s>"    → stepper_move("right", rpm, s*1000)
-//    "stepper,stop"               → stepper_stop()
-//    "stop"                       → bldc_stop() + stepper_stop() immediately
+//    "bldc,in,<rpm>"          → bldc_spin("in", rpm)  *in = CW in auger perspective*
+//    "bldc,out,<rpm>"         → bldc_spin("out", rpm)
+//    "bldc,stop"              → bldc_stop()
+//    "stepper,left,<mm>"      → stepper_move("left",  mm)   *CCW, speed locked at 270 RPM*
+//    "stepper,right,<mm>"     → stepper_move("right", mm)   *CW,  speed locked at 270 RPM*
+//    "stepper,stop"           → stepper_stop()
+//    "stop"                   → bldc_stop() + stepper_stop() immediately
 //
 //  Replies:
 //    "ACK:<cmd>"    – command received and dispatched
-//    "DONE:STEPPER" – timed stepper move completed
+//    "DONE:STEPPER" – step-counted stepper move completed
 //    "ERR:<reason>" – unknown or malformed command
 // ============================================================
 
@@ -28,14 +28,17 @@ const int SV = 3;
 const int FR = 7; // LOW = CW = IN, HIGH = CCW = OUT in auger perspective
 const int EN = 8; // LOW = driver enabled
 const int BLDC_RATED_RPM = 75;
-const int STEPS_PER_REV = 1600; // 200 base steps × 8 microsteps
 
-// Stepper (iCL57-23)
+// Stepper (iCL57-23) — SFU 1605 ball screw
 const int PUL = 9;
-const int DIR = 6; // HIGH = CW = LEFT, LOW = CCW = RIGHT
-unsigned long move_start_time = 0;
-unsigned long move_duration_ms = 0;
-bool stepper_running = false;
+const int DIR = 6;               // HIGH = CW = RIGHT, LOW = CCW = LEFT
+const int  STEPS_PER_REV = 800;  // 200 base steps × 4 microsteps
+const float MM_PER_REV   = 5.0;  // SFU 1605 lead
+const float STEPS_PER_MM = STEPS_PER_REV / MM_PER_REV; // 160 steps/mm
+const int  STEPPER_RPM   = 270;  // locked speed
+
+volatile long stepsRemaining = 0;
+volatile bool stepperDone    = false;
 
 // ============================================================
 //  HELPERS
@@ -45,23 +48,40 @@ int speedRPM(int rpm)
     return map(rpm, 0, BLDC_RATED_RPM, 0, 255);
 }
 
-// Sets Timer1 CTC frequency for stepper RPM.
-void setRPM(int rpm)
+// Timer1 ISR: counts step pulses. Each compare match toggles pin → 2 interrupts per step.
+ISR(TIMER1_COMPA_vect)
 {
-    if (rpm == 0)
+    static bool halfPulse = false;
+    halfPulse = !halfPulse;
+    if (halfPulse) return;
+
+    if (stepsRemaining > 0)
     {
-        TCCR1B &= ~((1 << CS12) | (1 << CS11) | (1 << CS10));
-        digitalWrite(PUL, LOW);
-        return;
+        stepsRemaining--;
+        if (stepsRemaining == 0)
+        {
+            TCCR1B &= ~((1 << CS12) | (1 << CS11) | (1 << CS10)); // stop clock
+            TIMSK1 &= ~(1 << OCIE1A);                              // disable interrupt
+            stepperDone = true;
+        }
     }
+}
 
-    long freq = (long)rpm * STEPS_PER_REV / 60; // step pulses per second
-    long ocrVal = 125000L / freq - 1;
-    ocrVal = constrain(ocrVal, 0L, 65535L);
-
+// Starts Timer1 at STEPPER_RPM using CTC + OC1A toggle (prescaler 64).
+static void startTimer()
+{
+    long freq   = (long)STEPPER_RPM * STEPS_PER_REV / 60;
+    long ocrVal = constrain(125000L / freq - 1, 0L, 65535L);
     TCNT1 = 0;
     OCR1A = (unsigned int)ocrVal;
+    TIMSK1 |= (1 << OCIE1A);
     TCCR1B = (TCCR1B & ~((1 << CS12) | (1 << CS11) | (1 << CS10))) | (1 << CS11) | (1 << CS10);
+}
+
+static void stopTimer()
+{
+    TCCR1B &= ~((1 << CS12) | (1 << CS11) | (1 << CS10));
+    TIMSK1 &= ~(1 << OCIE1A);
 }
 
 // ============================================================
@@ -93,42 +113,25 @@ void bldc_stop()
 //  STEPPER FUNCTIONS
 // ============================================================
 
-// Starts a non-blocking timed stepper move.
-//   direction "left"  → HIGH on DIR
-//   direction "right" → LOW  on DIR
-void stepper_move(String direction, int rpm, unsigned long duration_ms)
+// Starts a non-blocking step-counted stepper move (speed locked at STEPPER_RPM).
+//   direction "left"  → CCW (LOW on DIR)
+//   direction "right" → CW  (HIGH on DIR)
+void stepper_move(String direction, float mm)
 {
-    digitalWrite(DIR, (direction == "left") ? HIGH : LOW);
-    delayMicroseconds(5); // wait 5 µs before the first PUL edge (datasheet)
+    stopTimer();
+    digitalWrite(DIR, (direction == "right") ? HIGH : LOW);
+    delayMicroseconds(5); // DIR setup time (datasheet: min 5 µs before PUL)
 
-    int constrainedRPM = constrain(rpm, 0, 150);
-    setRPM(constrainedRPM);
-
-    move_start_time = millis();
-    move_duration_ms = duration_ms;
-    stepper_running = true;
+    stepsRemaining = (long)(mm * STEPS_PER_MM + 0.5f);
+    stepperDone    = false;
+    startTimer();
 }
 
 void stepper_stop()
 {
-    setRPM(0);
-    stepper_running = false;
-}
-
-// Call every loop(). Returns true and sends DONE:STEPPER when the
-// timed move has elapsed; returns false otherwise.
-bool stepper_check_done()
-{
-    if (!stepper_running)
-        return false;
-
-    if (millis() - move_start_time >= move_duration_ms)
-    {
-        stepper_stop();
-        send_done("STEPPER");
-        return true;
-    }
-    return false;
+    stopTimer();
+    stepsRemaining = 0;
+    stepperDone    = false;
 }
 
 // ============================================================
@@ -193,11 +196,10 @@ void handle_command(String cmd)
     }
     else if (motor == "stepper")
     {
-        if ((action == "left" || action == "right") && count >= 4)
+        if ((action == "left" || action == "right") && count >= 3)
         {
-            int rpm = tokens[2].toInt();
-            unsigned long dur = (unsigned long)tokens[3].toInt() * 1000UL; // s → ms
-            stepper_move(action, rpm, dur);
+            float mm = tokens[2].toFloat();
+            stepper_move(action, mm);
             send_ack("stepper," + action);
         }
         else if (action == "stop")
@@ -261,6 +263,10 @@ void loop()
             handle_command(cmd);
         }
     }
-    // Check if the timed stepper move has completed
-    stepper_check_done();
+    // Check if the step-counted stepper move has completed
+    if (stepperDone)
+    {
+        stepperDone = false;
+        send_done("STEPPER");
+    }
 }

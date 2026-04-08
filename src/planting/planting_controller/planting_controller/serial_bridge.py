@@ -10,9 +10,14 @@
 #  Publishes:    /arduino_status (std_msgs/String)
 #                  → every line received from Arduino
 #
+#  Command format (written to serial, forwarded from /arduino_cmd):
+#    "bldc,in,<rpm>"       "bldc,out,<rpm>"     "bldc,stop"
+#    "stepper,left,<mm>"   "stepper,right,<mm>" "stepper,stop"
+#    "stop"
+#
 #  Arduino reply tokens this node passes through unchanged:
 #    "ACK:<cmd>"     – command received and dispatched
-#    "DONE:STEPPER"  – timed stepper move completed
+#    "DONE:STEPPER"  – step-counted stepper move completed
 #    "ERR:<reason>"  – malformed / unknown command
 #    "READY"         – Arduino finished setup(), safe to send
 #
