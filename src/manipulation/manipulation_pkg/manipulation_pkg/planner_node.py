@@ -80,8 +80,10 @@ class ManipulationPlannerNode(Node):
         while self.pot_center is None:
             self.logger.info('Running pot detection')
             self.call_detection.publish(Bool(data=True))
+            time.sleep(0.5)
 
         self.logger.info(f'Pot detected at: {self.pot_center}')
+        # pot center in link_base (arm base) frame
 
         # update grasp pose
         self.grasp_pose = self.planner.get_grasp_pose(self.pot_center)
@@ -89,13 +91,17 @@ class ManipulationPlannerNode(Node):
         self.logger.info(f'Grasp pose calculated: {self.grasp_pose}')
 
         # get joint values of grasp pose
-        # grasp_joints = self.planner.grasp_pose_to_joint_values(self.grasp_pose)
+        grasp_joints = self.planner.grasp_pose_to_joint_values(self.grasp_pose)
+
+        if grasp_joints is None or len(grasp_joints) < 7:
+            self.logger.error(f'IK returned invalid joints: {grasp_joints}')
+            return False
 
         # # hard coded move to grasp
-        # self.logger.info('Step 3:Pre-grasp to grasp joints...')
-        # if not self.planner.move_joints(grasp_joints):
-        #     self.logger.error('Failed at step 3')
-        #     return False
+        self.logger.info('Step 3:Pre-grasp to grasp joints...')
+        if not self.planner.move_joints(grasp_joints):
+            self.logger.error('Failed at step 3')
+            return False
 
         # self.get_logger().info('Step 3: Moving towards to grasp...')
         # if not self._call_plan_joint(grasp_joints):

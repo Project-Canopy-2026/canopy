@@ -61,11 +61,14 @@ class PotDetector(Node):
     def image_callback(self, rgb_msg: Image, depth_msg: Image):
         self.latest_rgb_msg = rgb_msg
         self.latest_depth_msg = depth_msg
+        self.get_logger().debug('Received RGB and depth images')
 
 
     def pot_detection_callback(self, msg: Bool):
         if not msg.data:
             return
+
+        self._logger.info('Received enable_pot_detection signal, running detection on latest images...')
 
         if self.latest_rgb_msg is None or self.latest_depth_msg is None:
             self.get_logger().warn("No synced RGB/depth image available yet")
@@ -79,6 +82,8 @@ class PotDetector(Node):
         depth_image = np.asarray(depth_image, dtype=np.float32)
         depth_image /= 1000
 
+        self.get_logger().info('Got color and depth images, running detection...')
+
         # YOLO detection
         results = self.model(rgb_image)
         boxes = results[0].boxes  # ultralytics Results API
@@ -86,6 +91,8 @@ class PotDetector(Node):
         if boxes is None or len(boxes) == 0:
             self.get_logger().info('No objects detected')
             return
+        
+        self.get_logger().info(f'YOLO detection run')
         
         # Filter boxes by confidence threshold, then pick closest one
         best_idx = None
@@ -124,6 +131,8 @@ class PotDetector(Node):
         x1, y1, x2, y2 = boxes.xyxy[best_idx].cpu().numpy()
         conf = float(boxes.conf[best_idx].cpu())
         cls = int(boxes.cls[best_idx].cpu())
+
+        self.get_logger().info(f'Got best detection after confidence threshold applied')
 
         # Publish bounding box (as Int32MultiArray: [x1, y1, x2, y2, confidence])
         bbox_msg = Int32MultiArray()
@@ -175,23 +184,25 @@ class PotDetector(Node):
         center_3d_cam = self.project_3d(stable_center_x, stable_center_y, stable_depth_center)
 
         # transform the 3d projection from camera -> arm_base
-        # try:
-        #     center_3d_base = self.tf_buffer.transform(
-        #         center_3d_cam,
-        #         'arm_base',
-        #         timeout=rclpy.duration.Duration(seconds=0.2)
-        #     )
-        # except Exception as e:
-        #     self.get_logger().warn(f"Failed to transform point to link_base: {e}")
-        #     return
+        # use time=0 to get the latest available transform, avoiding extrapolation errors
+        center_3d_cam.header.stamp = rclpy.time.Time().to_msg()
+        try:
+            center_3d_base = self.tf_buffer.transform(
+                center_3d_cam,
+                'link_base',
+                timeout=rclpy.duration.Duration(seconds=0.2)
+            )
+        except Exception as e:
+            self.get_logger().warn(f"Failed to transform point to link_base: {e}")
+            return
 
         # get grasp pose
         #grasp_pose = calc_grasp_pose(center_3d_base)
 
         # publish pot center pose
-        self.pot_pose_pub.publish(center_3d_cam)
+        self.pot_pose_pub.publish(center_3d_base)
 
-        self.get_logger().info('Published pot center point in camera frame')
+        self.get_logger().info('Published pot center point in arm base frame')
 
 
     def project_3d(self, x, y, depth):

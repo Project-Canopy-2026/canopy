@@ -264,6 +264,7 @@ class Planner:
 
     # ── grasp pose ──────────────────────────────────────────────────────
     def get_gripper_pose(self):
+        # gives gripper pose relative to arm base frame (link_base)
         try:
             transform = self.tf_buffer.lookup_transform(
                 cfg.BASE_FRAME, self.ee_link, rclpy.time.Time()
@@ -288,16 +289,29 @@ class Planner:
 
 
     def get_grasp_pose(self, pot_center):
+        # gives grasp pose realtive to arm base frame (link_base)
         # pot_center is pointStamp type
 
         # get gripper cartesian position
         gripper_pose = self.get_gripper_pose()
+
+        self.logger.info(f'Gripper pose at grasp calculation: {gripper_pose}')
         
         gripper_pos = np.array([
             gripper_pose.position.x,
             gripper_pose.position.y,
             gripper_pose.position.z
         ], dtype=float)
+
+        # get gripper current orientation as rotation matrix
+        current_R = Rot.from_quat([
+            gripper_pose.orientation.x,
+            gripper_pose.orientation.y,
+            gripper_pose.orientation.z,
+            gripper_pose.orientation.w
+        ]).as_matrix()
+
+        y_ref = current_R[:, 1]  # second column = current Y axis in base frame
 
         pot_pos = np.array([
             pot_center.point.x,
@@ -312,15 +326,12 @@ class Planner:
         z_gripper_axis = self.normalize(grasp_vector)
 
         # sideways axis
-        ref_up=np.array([0.0, 0.0, 1.0], dtype=float)
-
-        x_gripper_axis = np.cross(ref_up, z_gripper_axis)
+        x_gripper_axis = np.cross(y_ref, z_gripper_axis)
 
         # if ref parallel to z axis
         if np.linalg.norm(x_gripper_axis) < 1e-8:
-            ref_up = np.array([1.0, 0.0, 0.0], dtype=float)
-            x_gripper_axis = np.cross(ref_up, z_gripper_axis)
-        
+            x_gripper_axis = np.cross(current_R[:, 0], z_gripper_axis)
+
         x_gripper_axis = self.normalize(x_gripper_axis)
 
         # remaining axis

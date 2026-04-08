@@ -17,6 +17,8 @@ def generate_launch_description():
     realsense_driver = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(rs_launch_path),
             launch_arguments={
+                'camera_name': 'd405',
+                'publish_tf': 'false',
                 'align_depth.enable': 'true',
                 'color_width': '640',
                 'color_height': '480',
@@ -45,11 +47,21 @@ def generate_launch_description():
     #     }]
     # )
 
+    camera_name = 'd405'
+
     pot_detection = Node(
         package='pot_detector',
         executable='pot_detection_node',
         name='pot_detector',
         output='screen',
+        remappings=[
+            ('/camera/camera/color/image_raw',
+             f'/camera/{camera_name}/color/image_raw'),
+            ('/camera/camera/aligned_depth_to_color/image_raw',
+             f'/camera/{camera_name}/aligned_depth_to_color/image_raw'),
+            ('/camera/camera/aligned_depth_to_color/camera_info',
+             f'/camera/{camera_name}/aligned_depth_to_color/camera_info'),
+        ],
     )
 
     return LaunchDescription([
