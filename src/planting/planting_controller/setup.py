@@ -11,7 +11,6 @@ setup(
         'unit_test.can_tests',
     ],
     package_dir={
-        'planting_controller': 'planting_controller',
         'unit_test': '../unit_test',
         'unit_test.can_tests': '../unit_test/can_tests',
     },
@@ -25,6 +24,9 @@ setup(
         ]),
         ('share/' + package_name + '/eds', [
             'planting_controller/LINAK-actuator-v3-1.eds',
+        ]),
+        ('share/' + package_name + '/arduino', [
+            'planting_controller/planting_arduino/planting_arduino.ino',
         ]),
     ],
     install_requires=['setuptools'],

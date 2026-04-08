@@ -7,8 +7,9 @@ from launch.events.process import ProcessIO
 
 
 def on_output(event: ProcessIO, trigger_str: str, actions):
-    """Return actions when trigger_str appears in stdout."""
-    if trigger_str in event.text.decode(errors='ignore'):
+    text = event.text.decode(errors='ignore')
+    print(f'[LAUNCH DEBUG] from_stdout={event.from_stdout} from_stderr={event.from_stderr} text={repr(text[:80])}')
+    if trigger_str in text:
         return actions
     return []
 
@@ -21,7 +22,8 @@ serial_bridge = Node(
     name='serial_bridge',
     output='screen',
     parameters=[{
-        'port': '/dev/arduino',
+        # 'port': '/dev/arduino',
+        'port': '/dev/ttyACM1',
         'baudrate': 115200
     }]
 )
@@ -58,11 +60,8 @@ def generate_launch_description():
         RegisterEventHandler(
             OnProcessIO(
                 target_action=serial_bridge,
-                on_stdout=lambda event: on_output(
-                    event,
-                    'Arduino is READY',
-                    [linak_can_node]
-                ),
+                on_stdout=lambda event: on_output(event, 'Arduino is READY', [linak_can_node]),
+                on_stderr=lambda event: on_output(event, 'Arduino is READY', [linak_can_node]),
             )
         ),
 
@@ -70,12 +69,8 @@ def generate_launch_description():
         RegisterEventHandler(
             OnProcessIO(
                 target_action=linak_can_node,
-                on_stdout=lambda event: on_output(
-                    event,
-                    'Both LINAK actuators initialised',
-                    # [planting_fsm, planting_fsm_test]
-                    [planting_fsm]
-                ),
+                on_stdout=lambda event: on_output(event, 'both actuators initialised', [planting_fsm]),
+                on_stderr=lambda event: on_output(event, 'both actuators initialised', [planting_fsm]),
             )
         ),
 

@@ -22,7 +22,8 @@ src/planting/
 │   ├── setup.py
 │   ├── planting_controller/
 │   │   ├── __init__.py
-│   │   ├── planting_arduino.ino        ← combined BLDC + stepper sketch (used in production)
+│   │   ├── planting_arduino/
+│   │   │   └── planting_arduino.ino    ← combined BLDC + stepper sketch (used in production)
 │   │   ├── serial_bridge.py            ← bridges /arduino_cmd ↔ serial ↔ /arduino_status
 │   │   ├── planting_fsm.py             ← FSM using timed DOWN/UP commands for LINAK_1
 │   │   ├── planting_fsm_test_node.py   ← interactive tester for the planting FSM
@@ -41,11 +42,11 @@ src/planting/
 │       └── can_tests.py
 └── README.md
 ```
-## Full FSM Haven't Tested from launch file
+## Full FSM with Launch File
 ### Terminal 1    
 ```bash
   source /opt/ros/humble/setup.bash
-  colcon build --packages-select planting_controller
+  colcon build --packages-select planting_controller --symlink-install
   source install/setup.bash
   ros2 launch planting_controller planting_bringup.launch.py
 ```
@@ -61,7 +62,7 @@ Tests the full planting sequence end-to-end with all hardware: Arduino (BLDC + s
 
 ### Step 1 — Flash the Arduino
 
-Open `src/planting/planting_controller/planting_controller/planting_arduino.ino` in the Arduino IDE and upload to the board (baud rate: 115200).
+Open `src/planting/planting_controller/planting_controller/planting_arduino/planting_arduino.ino` in the Arduino IDE and upload to the board (baud rate: 115200).
 
 ### Step 2 — Serial port permissions (once)
 

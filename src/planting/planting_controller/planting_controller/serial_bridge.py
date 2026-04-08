@@ -43,8 +43,8 @@ class SerialBridgeNode(Node):
         super().__init__('serial_bridge')
 
         # see plannting_bringup.launch.py for how to set these parameters when launching
-        # self.declare_parameter('port', '/dev/ttyACM0')
-        self.declare_parameter('port', '/dev/arduino')
+        self.declare_parameter('port', '/dev/ttyACM1')
+        # self.declare_parameter('port', '/dev/arduino')
         self.declare_parameter('baudrate', 115200)
 
         port = self.get_parameter('port').get_parameter_value().string_value

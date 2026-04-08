@@ -225,7 +225,7 @@ class PlantingFsmNode(Node):
             if self._dwell_timer is not None:
                 self._dwell_timer.cancel()
                 self._dwell_timer = None
-        self._enter(State.DRILLING_DOWN)
+        self._enter(State.AUGER_SPIN_UP)
 
     def _dwell_done(self):
         # ROS2 timers repeat — cancel immediately after first fire
