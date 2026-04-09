@@ -61,7 +61,7 @@ class PlantingFsmNode(Node):
         # ── Parameters ────────────────────────────────────────────────────
         self.declare_parameter('drilling_distance_cm', 30.0) # tbd
         self.declare_parameter('retract_distance_cm',  30.0) # tbd
-        self.declare_parameter('drilling_dwell',       10.0) # tbd
+        self.declare_parameter('drilling_dwell',       5.0) # tbd
         self.declare_parameter('chute_distance_cm',    30.0) # tbd
         self.declare_parameter('shift_distance_cm',    23.0) # measured
         self.declare_parameter('auger_rpm',            75)
