@@ -1,240 +1,179 @@
-#deterministic_planner_node.py
-import math
 import time
+import threading
+
 import rclpy
 from rclpy.node import Node
-from std_srvs.srv import Trigger
-from xarm_msgs.srv import PlanPose, PlanExec, PlanJoint
-from geometry_msgs.msg import Pose
-from moveit_msgs.msg import CollisionObject, PlanningScene
-from shape_msgs.msg import SolidPrimitive
+from rclpy.executors import MultiThreadedExecutor
+#from std_srvs.srv import Trigger
 
+from manipulation_pkg import arm_config as cfg
+from manipulation_pkg.planner_actions import Planner
 
-class ManipulationPlanner(Node):
+from geometry_msgs.msg import PointStamped
+from std_msgs.msg import Bool
+
+class ManipulationPlannerNode(Node):
     def __init__(self):
         super().__init__('manipulation_planner')
 
-        # self.pre_grasp_joints = self._deg_to_rad(-90.0, 0.00, 0.0, 10.0, -180.0,  80.0, -90)
-        # self.grasp_joints     = self._deg_to_rad(-71.2, 9, -17.8, 22.8, -180.0,  75.7, -90)
-        # self.lift_joints      = self._deg_to_rad(-80.0, -30.0, -10.0, 60.0, -160.0,  0.0, -110.0)
-        
+        self.planner = Planner(self)
+        self.logger = self.planner.logger
+
+        # build poses from config
+        # self.grasp_pose = self.planner.make_pose_from_dict(cfg.GRASP_POSE)
+        #self.grasp_pose = None
+
+        # lift: same X,Y,orientation as grasp, only Z changes
+        # self.lift_pose = self.planner.make_pose(
+        #     cfg.GRASP_POSE['x'],
+        #     cfg.GRASP_POSE['y'],
+        #     cfg.LIFT_POSE['z']
+        # )
+        #elf.lift_pose.orientation = self.grasp_pose.orientation
+
+        #self.create_service(Trigger, '/planner/trigger', self.trigger_cb)
+
+        #self.get_logger().info('All ready. Call /planner/trigger to start.')
+
         self.pre_grasp_joints = self._deg_to_rad(-61.1, -3.7, -30.5, 2.0, -181.5,  84.7, -91.7)
         self.grasp_joints     = self._deg_to_rad(-27.6, 16.7, -53.4, 21.3, -168.8,  76.8, -78.9)
         self.lift_joints      = self._deg_to_rad(-41.5, -12.8, -46.9, 19.6, -176.6,  62.0, -100.9)
         self.drop_joints      = self._deg_to_rad(-35.0, -25.0, 0.0, 75.0, -160.0,  -10.0, -110.0)
+
+        # publishers
+        #self.call_detection_pub = self.create_publisher(Bool, 'behavior/enable_pot_detection', 10)
+        self.seedling_dropped_pub = self.create_publisher(Bool, 'behavior/seedling_dropped', 10)
         
-        self.plan_pose     = self.create_client(PlanPose, '/xarm_pose_plan')
-        self.plan_joint    = self.create_client(PlanJoint, '/xarm_joint_plan')
-        self.plan_exec     = self.create_client(PlanExec, '/xarm_exec_plan')
-        self.gripper_open  = self.create_client(Trigger,  '/gripper/open')
-        self.gripper_close = self.create_client(Trigger,  '/gripper/close')
+        # subscribers
+        #self.create_subscription(PointStamped, 'pot/center_point', self.pot_center_callback, 10)
+        self.create_subscription(Bool, 'behavior/do_planting', self.start_planting_callback, 10)
+        self.create_subscription(Bool, '/chute_in_position', self.chute_in_position_callback, 10)
 
-        self.scene_pub = self.create_publisher(
-            PlanningScene, '/planning_scene', 10)
+        self.should_run = False
+        #self.pot_center = None
+        self.chute_in_position= False
 
-        self.get_logger().info('Planner node started. Waiting for services...')
-        self._wait_for_services()
-        self.get_logger().info('All services ready.')
 
-    def euler_to_quaternion(self, roll_deg, pitch_deg, yaw_deg):
-        r = math.radians(roll_deg)
-        p = math.radians(pitch_deg)
-        y = math.radians(yaw_deg)
-        qx = math.sin(r/2)*math.cos(p/2)*math.cos(y/2) - math.cos(r/2)*math.sin(p/2)*math.sin(y/2)
-        qy = math.cos(r/2)*math.sin(p/2)*math.cos(y/2) + math.sin(r/2)*math.cos(p/2)*math.sin(y/2)
-        qz = math.cos(r/2)*math.cos(p/2)*math.sin(y/2) - math.sin(r/2)*math.sin(p/2)*math.cos(y/2)
-        qw = math.cos(r/2)*math.cos(p/2)*math.cos(y/2) + math.sin(r/2)*math.sin(p/2)*math.sin(y/2)
-        return qx, qy, qz, qw
-    
-    def _deg_to_rad(self, j1, j2, j3, j4, j5, j6, j7):
-        return [
-            math.radians(float(j1)), 
-            math.radians(float(j2)), 
-            math.radians(float(j3)), 
-            math.radians(float(j4)), 
-            math.radians(float(j5)), 
-            math.radians(float(j6)), 
-            math.radians(float(j7))
-        ]
+    # def trigger_cb(self, request, response):
+    #     if self.should_run:
+    #         response.success = False
+    #         response.message = 'Already running'
+    #     else:
+    #         self.should_run = True
+    #         response.success = True
+    #         response.message = 'Sequence triggered'
+    #     return response
 
-    def _make_pose(self, x, y, z, roll_deg=0.0, pitch_deg=0.0, yaw_deg=0.0):
-        pose = Pose()
-        pose.position.x = x
-        pose.position.y = y
-        pose.position.z = z
-        qx, qy, qz, qw = self.euler_to_quaternion(roll_deg, pitch_deg, yaw_deg)
-        pose.orientation.x = qx
-        pose.orientation.y = qy
-        pose.orientation.z = qz
-        pose.orientation.w = qw
-        return pose
-
-    def _make_box_object(self, name, x, y, z, lx, ly, lz):
-        obj = CollisionObject()
-        obj.header.frame_id = 'link_base'
-        obj.id = name
-        box = SolidPrimitive()
-        box.type = SolidPrimitive.BOX
-        box.dimensions = [lx, ly, lz]
-        pose = Pose()
-        pose.position.x = x
-        pose.position.y = y
-        pose.position.z = z
-        pose.orientation.w = 1.0
-        obj.primitives = [box]
-        obj.primitive_poses = [pose]
-        obj.operation = CollisionObject.ADD
-        return obj
-
-    def setup_collision_scene(self):
-        self.get_logger().info('Setting up collision scene...')
-        scene = PlanningScene()
-        scene.is_diff = True
-        # floor plane — prevents arm going below base level
-        scene.world.collision_objects.append(
-            self._make_box_object('floor', x=0.0, y=0.0, z=-0.05, lx=3.0, ly=3.0, lz=0.05))
-        scene.world.collision_objects.append(
-            self._make_box_object('rail_left',  x=-0.30, y=0.35,  z=0.085, lx=1.40, ly=0.29, lz=0.17))
-        scene.world.collision_objects.append(
-            self._make_box_object('rail_right', x=-0.30, y=-0.7, z=0.085, lx=1.40, ly=0.29, lz=0.17))
-        scene.world.collision_objects.append(
-            self._make_box_object('planting_assembly', x=0.450, y= 0.0, z=0.2, lx=0.2, ly=1.0, lz=0.5))        
-        # scene.world.collision_objects.append(
-            # self._make_box_object('pole',       x=0.24,  y=-0.24, z=0.60,  lx=0.06, ly=0.06, lz=1.20))
-        for _ in range(5):
-            self.scene_pub.publish(scene)
-            time.sleep(0.5)
-        self.get_logger().info('Collision scene ready.')
-
-    def _wait_for_services(self):
-        for client in [
-            self.plan_pose,
-            self.plan_joint,
-            self.plan_exec,
-            self.gripper_open,
-            self.gripper_close,
-        ]:
-            while not client.wait_for_service(timeout_sec=2.0):
-                self.get_logger().warn(f'Waiting for {client.srv_name}...')
-
-    def _call_plan_pose(self, pose):
-        req = PlanPose.Request()
-        req.target = pose
-        future = self.plan_pose.call_async(req)
-        rclpy.spin_until_future_complete(self, future)
-        result = future.result()
-        if not result.success:
-            self.get_logger().error('PlanPose failed')
-            return False
-        return True
-
-    def _call_plan_joint(self, joint_angles):
-        """Sends a list of 7 joint angles to the MoveIt Joint Planner."""
-        self.get_logger().info('Waiting for /xarm_joint_plan service...')
-        self.plan_joint.wait_for_service()
-        
-        req = PlanJoint.Request()
-        req.target = joint_angles
-        
-        # Send the request
-        future = self.plan_joint.call_async(req)
-        rclpy.spin_until_future_complete(self, future)
-        
-        if future.result() is not None and future.result().success:
-            self.get_logger().info('Joint plan successful!')
-            return True
+    def start_planting_callback(self, msg: Bool):
+        if msg.data:
+            self.logger.info('Received planting command')
+            self.should_run = True
         else:
-            self.get_logger().error('Failed to generate joint plan.')
-            return False
+            self.logger.info('Received stop command')
+            self.should_run = False
 
-    def _call_plan_exec(self):
-        req = PlanExec.Request()
-        req.wait = True
-        future = self.plan_exec.call_async(req)
-        rclpy.spin_until_future_complete(self, future)
-        result = future.result()
-        if not result.success:
-            self.get_logger().error('PlanExec failed')
-            return False
-        return True
 
-    def _call_gripper(self, client, action):
-        req = Trigger.Request()
-        future = client.call_async(req)
-        rclpy.spin_until_future_complete(self, future)
-        result = future.result()
-        if not result.success:
-            self.get_logger().error(f'Gripper {action} failed: {result.message}')
-            return False
-        self.get_logger().info(f'Gripper {action} success')
-        return True
+    def chute_in_position_callback(self, msg: Bool):
+        if msg.data:
+            self.logger.info('Received chute in position command')
+            self.chute_in_position = True
+        else:
+            self.logger.info('Received chute not in position command')
+            self.chute_in_position = False
 
-    def run(self):
-        self.get_logger().info('Starting pick and place sequence...')
 
-        self.setup_collision_scene()
+    def pot_center_callback(self, msg: PointStamped):
+        self.pot_center = msg
 
+
+    def run_pick_and_place(self):
+        self.logger.info('=== Starting pick and place ===')
+
+        # Step 0: set up collision scene first
+        self.planner.setup_collision_scene()
+
+        # Step 1: joint-space to pre-grasp
         self.get_logger().info('Step 1: Moving to Pre Grasp')
         if not self._call_plan_joint(self.pre_grasp_joints):
-            return
+            return False
         if not self._call_plan_exec():
-            return
-        # time.sleep(1.0)
+            return False
 
+        # Step 2: open gripper
+        # self.logger.info('Step 2: Open gripper...')
+        # if not self.planner.open_gripper():
+        #     self.logger.error('Failed at step 2')
+        #     return False
 
-        self.get_logger().info('Step 2: Opening gripper...')
-        if not self._call_gripper(self.gripper_open, 'open'):
-            return
-        
-        # time.sleep(1.0)
-
+        # move to grasp
         self.get_logger().info('Step 3: Moving towards to grasp...')
         if not self._call_plan_joint(self.grasp_joints):
             return
         if not self._call_plan_exec():
             return
-        
-        # time.sleep(1.0)
 
-        self.get_logger().info('Step 4: Closing gripper...')
-        if not self._call_gripper(self.gripper_close, 'close'):
-            return
-        
-        # time.sleep(1.0)
+        #Step 4: close gripper
+        # self.logger.info('Step 4: Close gripper...')
+        # if not self.planner.close_gripper():
+        #     self.logger.error('Failed at step 4')
+        #     return False
 
+        # Step 5: lift
         self.get_logger().info('Step 5: Lifting...')
         if not self._call_plan_joint(self.lift_joints):
-            return
+            return False
         if not self._call_plan_exec():
-            return
-        
-        # time.sleep(1.0)
+            return False
 
+        # Step 6: move to drop
         self.get_logger().info('Step 6: Moving to Waypoint B')
         if not self._call_plan_joint(self.drop_joints):
-            return
+            return False
         if not self._call_plan_exec():
-            return
-        
-        # time.sleep(1.0)
+            return False
 
+        # wait for chute in position command before releasing seedling
+        while not self.chute_in_position:
+            self.logger.info('Waiting for chute to be in position before dropping seedling...')
+            time.sleep(0.5)
 
-        self.get_logger().info('Step 7: Releasing object...')
-        if not self._call_gripper(self.gripper_open, 'open'):
-            return
-        
-        time.sleep(1.0)
+        # Step 7: release
+        if self.chute_in_position:
+            self.logger.info('Chute is in position, proceeding to drop')
 
-        self.get_logger().info('Pick and place complete.')
+            # open gripper to release seedling
+            # if not self.planner.open_gripper():
+            #     self.logger.error('Failed to open gripper at drop pose')
+            #     return
+            
+            self.logger.info('Seedling dropped successfully')
+            self.seedling_dropped_pub.publish(Bool(data=True))
+        else:
+            self.logger.info('Received chute not in position command, aborting drop')
 
-    def destroy_node(self):
-        super().destroy_node()
+        self.logger.info('=== Pick and place complete ===')
+        return True
+
+    def run(self):
+        while rclpy.ok():
+            if self.should_run:
+                self.should_run = False
+                self.run_pick_and_place()
+            else:
+                time.sleep(0.1)
 
 
 def main(args=None):
     rclpy.init(args=args)
-    node = ManipulationPlanner()
-    node.run()
+    node = ManipulationPlannerNode()
+
+    executor = MultiThreadedExecutor()
+    executor.add_node(node)
+
+    run_thread = threading.Thread(target=node.run, daemon=True)
+    run_thread.start()
+
+    executor.spin()
     node.destroy_node()
     rclpy.shutdown()
 

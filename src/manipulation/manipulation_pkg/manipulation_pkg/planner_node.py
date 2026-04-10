@@ -4,7 +4,7 @@ import threading
 import rclpy
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
-from std_srvs.srv import Trigger
+#from std_srvs.srv import Trigger
 
 from manipulation_pkg import arm_config as cfg
 from manipulation_pkg.planner_actions import Planner
@@ -40,7 +40,7 @@ class ManipulationPlannerNode(Node):
         self.seedling_dropped_pub = self.create_publisher(Bool, 'behavior/seedling_dropped', 10)
         
         # subscribers
-        self.create_subscription(PointStamped, 'pot/center_point', self.pot_center_callback, 10)
+        #self.create_subscription(PointStamped, 'pot/center_point', self.pot_center_callback, 10)
         self.create_subscription(Bool, 'behavior/do_planting', self.start_planting_callback, 10)
         self.create_subscription(Bool, '/chute_in_position', self.chute_in_position_callback, 10)
 
@@ -100,83 +100,71 @@ class ManipulationPlannerNode(Node):
         #     return False
 
         # run pot detector until we get a valid detection
-        while self.pot_center is None:
-            self.logger.info('Running pot detection')
-            self.call_detection_pub.publish(Bool(data=True))
-            time.sleep(0.5)
+        # while self.pot_center is None:
+        #     self.logger.info('Running pot detection')
+        #     self.call_detection_pub.publish(Bool(data=True))
+        #     time.sleep(0.5)
 
-        self.logger.info(f'Pot detected at: {self.pot_center}')
-        # pot center in link_base (arm base) frame
+        # self.logger.info(f'Pot detected at: {self.pot_center}')
+        # # pot center in link_base (arm base) frame
 
-        # update grasp poseshould_run
-        self.grasp_pose = self.planner.get_grasp_pose(self.pot_center)
+        # # update grasp poseshould_run
+        # self.grasp_pose = self.planner.get_grasp_pose(self.pot_center)
 
-        self.logger.info(f'Grasp pose calculated: {self.grasp_pose}')
+        # self.logger.info(f'Grasp pose calculated: {self.grasp_pose}')
 
-        # get joint values of grasp pose
-        grasp_joints = self.planner.grasp_pose_to_joint_values(self.grasp_pose)
+        # # get joint values of grasp pose
+        # grasp_joints = self.planner.grasp_pose_to_joint_values(self.grasp_pose)
 
-        if grasp_joints is None or len(grasp_joints) < 7:
-            self.logger.error(f'IK returned invalid joints: {grasp_joints}')
-            return False
+        # if grasp_joints is None or len(grasp_joints) < 7:
+        #     self.logger.error(f'IK returned invalid joints: {grasp_joints}')
+        #     return False
 
-        # # hard coded move to grasp
-        self.logger.info('Step 3:Pre-grasp to grasp joints...')
-        if not self.planner.move_joints(grasp_joints):
+        # planner move to grasp
+        self.logger.info('Step 3: Grasp Move (Pilz LIN)...')
+        success = self.planner.move_cartesian(
+            self.grasp_pose,
+            pipeline='pilz_industrial_motion_planner',
+            planner='LIN'
+        )
+        if not success:
+            self.logger.warn('Pilz LIN failed, falling back to OMPL...')
+            success = self.planner.move_cartesian(self.grasp_pose)
+        if not success:
             self.logger.error('Failed at step 3')
             return False
 
-        # self.get_logger().info('Step 3: Moving towards to grasp...')
-        # if not self._call_plan_joint(grasp_joints):
-        #     return
-        # if not self._call_plan_exec():
-        #     return
+        #Step 4: close gripper
+        self.logger.info('Step 4: Close gripper...')
+        if not self.planner.close_gripper():
+            self.logger.error('Failed at step 4')
+            return False
 
-        # planner move to grasp
-        # self.logger.info('Step 3: Grasp Move (Pilz LIN)...')
-        # success = self.planner.move_cartesian(
-        #     self.grasp_pose,
-        #     pipeline='pilz_industrial_motion_planner',
-        #     planner='LIN'
-        # )
-        # if not success:
-        #     self.logger.warn('Pilz LIN failed, falling back to OMPL...')
-        #     success = self.planner.move_cartesian(self.grasp_pose)
-        # if not success:
-        #     self.logger.error('Failed at step 3')
-        #     return False
+        # Step 5: lift
+        self.logger.info('Step 5: Lift (Pilz LIN)...')
+        success = self.planner.move_cartesian(
+            self.lift_pose,
+            pipeline='pilz_industrial_motion_planner',
+            planner='LIN',
+            constrained=True,
+            reference_pose=self.grasp_pose
+        )
+        if not success:
+            self.logger.warn('Pilz LIN lift failed, falling back to OMPL...')
+            success = self.planner.move_cartesian(
+                self.lift_pose,
+                constrained=True,
+                reference_pose=self.grasp_pose
+            )
+        if not success:
+            self.logger.error('Failed at step 5')
+            return False
 
-        # Step 4: close gripper
-        # self.logger.info('Step 4: Close gripper...')
-        # if not self.planner.close_gripper():
-        #     self.logger.error('Failed at step 4')
-        #     return False
-
-        # # Step 5: lift
-        # self.logger.info('Step 5: Lift (Pilz LIN)...')
-        # success = self.planner.move_cartesian(
-        #     self.lift_pose,should_run
-        #     pipeline='pilz_industrial_motion_planner',
-        #     planner='LIN',
-        #     constrained=True,
-        #     reference_pose=self.grasp_pose
-        # )
-        # if not success:
-        #     self.logger.warn('Pilz LIN lift failed, falling back to OMPL...')
-        #     success = self.planner.move_cartesian(
-        #         self.lift_pose,
-        #         constrained=True,
-        #         reference_pose=self.grasp_pose
-        #     )
-        # if not success:
-        #     self.logger.error('Failed at step 5')
-        #     return False
-
-        # # Step 6: move to drop
-        # self.logger.info('Step 6: Drop (joint)...')
-        # if not self.planner.move_joints(cfg.DROP_JOINTS_DEG):
-        #     self.logger.error('Failed at step 6')
-        #     return Falseshould_run
+        # Step 6: move to drop
+        self.logger.info('Step 6: Drop (joint)...')
+        if not self.planner.move_joints(cfg.DROP_JOINTS_DEG):
+            self.logger.error('Failed at step 6')
+            return False
 
         # wait for chute in position command before releasing seedling
         while not self.chute_in_position:

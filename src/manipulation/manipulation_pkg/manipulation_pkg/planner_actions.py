@@ -18,7 +18,7 @@ from moveit_msgs.srv import GetPositionIK
 from shape_msgs.msg import SolidPrimitive
 import tf2_ros
 
-from xarm_msgs.srv import PlanPose, PlanExec, PlanJoint
+from xarm_msgs.srv import PlanExec, PlanJoint
 
 from manipulation_pkg import arm_config as cfg
 
@@ -53,8 +53,8 @@ class Planner:
         self.ik_client.wait_for_service()
         # self.arm_group_name = "xarm7"
 
-        # self.plan_joint = self.create_client(PlanJoint, '/xarm_joint_plan')
-        # self.plan_exec = self.create_client(PlanExec, '/xarm_exec_plan')
+        self.plan_joint = self.create_client(PlanJoint, '/xarm_joint_plan')
+        self.plan_exec = self.create_client(PlanExec, '/xarm_exec_plan')
 
     # ── helpers ────────────────────────────────────────────────────────
     def _wait_for_services(self):
@@ -386,32 +386,32 @@ class Planner:
 
     # ── deterministic planner function ────────────────────────────────────────────────────
 
-    # def _call_plan_joint(self, joint_angles):
-    #     """Sends a list of 7 joint angles to the MoveIt Joint Planner."""
-    #     self.get_logger().info('Waiting for /xarm_joint_plan service...')
-    #     self.plan_joint.wait_for_service()
+    def _call_plan_joint(self, joint_angles):
+        """Sends a list of 7 joint angles to the MoveIt Joint Planner."""
+        self.get_logger().info('Waiting for /xarm_joint_plan service...')
+        self.plan_joint.wait_for_service()
         
-    #     req = PlanJoint.Request()
-    #     req.target = joint_angles
+        req = PlanJoint.Request()
+        req.target = joint_angles
         
-    #     # Send the request
-    #     future = self.plan_joint.call_async(req)
-    #     rclpy.spin_until_future_complete(self, future)
+        # Send the request
+        future = self.plan_joint.call_async(req)
+        rclpy.spin_until_future_complete(self, future)
         
-    #     if future.result() is not None and future.result().success:
-    #         self.get_logger().info('Joint plan successful!')
-    #         return True
-    #     else:
-    #         self.get_logger().error('Failed to generate joint plan.')
-    #         return False
+        if future.result() is not None and future.result().success:
+            self.get_logger().info('Joint plan successful!')
+            return True
+        else:
+            self.get_logger().error('Failed to generate joint plan.')
+            return False
 
-    # def _call_plan_exec(self):
-    #     req = PlanExec.Request()
-    #     req.wait = True
-    #     future = self.plan_exec.call_async(req)
-    #     rclpy.spin_until_future_complete(self, future)
-    #     result = future.result()
-    #     if not result.success:
-    #         self.get_logger().error('PlanExec failed')
-    #         return False
-    #     return True
+    def _call_plan_exec(self):
+        req = PlanExec.Request()
+        req.wait = True
+        future = self.plan_exec.call_async(req)
+        rclpy.spin_until_future_complete(self, future)
+        result = future.result()
+        if not result.success:
+            self.get_logger().error('PlanExec failed')
+            return False
+        return True
