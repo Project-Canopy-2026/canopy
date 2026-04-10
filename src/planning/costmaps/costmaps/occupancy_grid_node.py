@@ -199,6 +199,22 @@ class OccupancyGridNode(Node):
         return pts_base
 
 
+        # GPS-only mode: no LiDAR available, publish a free grid instead.
+        # Risk: robot won't avoid any real obstacles.
+    #     self.timer = self.create_timer(0.1, self.publish_free_grid)
+
+    # def publish_free_grid(self):
+    #     grid = OccupancyGrid()
+    #     grid.header.stamp = self.get_clock().now().to_msg()
+    #     grid.header.frame_id = "base_link"
+    #     grid.info.resolution = 0.2
+    #     grid.info.width = 100
+    #     grid.info.height = 100
+    #     grid.info.origin.position.x = -8.0  # -40px * 0.2m
+    #     grid.info.origin.position.y = -10.0  # -50px * 0.2m
+    #     grid.data = [0] * (100 * 100)  # all free
+    #     self.occ_grid_pub.publish(grid)
+    
     def pcdCb(self, msg: PointCloud2):
         self.last_cloud_time = self.get_clock().now()
 
