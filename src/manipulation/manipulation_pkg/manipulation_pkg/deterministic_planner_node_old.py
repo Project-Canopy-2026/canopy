@@ -93,14 +93,14 @@ class ManipulationPlanner(Node):
         # floor plane — prevents arm going below base level
         scene.world.collision_objects.append(
             self._make_box_object('floor', x=0.0, y=0.0, z=-0.05, lx=3.0, ly=3.0, lz=0.05))
-        scene.world.collision_objects.append(
-            self._make_box_object('rail_left',  x=-0.30, y=0.35,  z=0.085, lx=1.40, ly=0.29, lz=0.17))
-        scene.world.collision_objects.append(
-            self._make_box_object('rail_right', x=-0.30, y=-0.7, z=0.085, lx=1.40, ly=0.29, lz=0.17))
+        # scene.world.collision_objects.append(
+        #     self._make_box_object('rail_left',  x=-0.30, y=0.35,  z=0.085, lx=1.40, ly=0.29, lz=0.17))
+        # scene.world.collision_objects.append(
+        #     self._make_box_object('rail_right', x=-0.30, y=-0.7, z=0.085, lx=1.40, ly=0.29, lz=0.17))
         scene.world.collision_objects.append(
             self._make_box_object('planting_assembly', x=0.450, y= 0.0, z=0.2, lx=0.2, ly=1.0, lz=0.5))        
         # scene.world.collision_objects.append(
-            # self._make_box_object('pole',       x=0.24,  y=-0.24, z=0.60,  lx=0.06, ly=0.06, lz=1.20))
+        #     self._make_box_object('pole',       x=0.24,  y=-0.24, z=0.60,  lx=0.06, ly=0.06, lz=1.20))
         for _ in range(5):
             self.scene_pub.publish(scene)
             time.sleep(0.5)

@@ -1,3 +1,4 @@
+import math
 import time
 import threading
 
@@ -28,17 +29,17 @@ class ManipulationPlannerNode(Node):
         #     cfg.GRASP_POSE['x'],
         #     cfg.GRASP_POSE['y'],
         #     cfg.LIFT_POSE['z']
-        # )
-        #elf.lift_pose.orientation = self.grasp_pose.orientation
+
+        #self.lift_pose.orientation = self.grasp_pose.orientation
 
         #self.create_service(Trigger, '/planner/trigger', self.trigger_cb)
 
         #self.get_logger().info('All ready. Call /planner/trigger to start.')
 
-        self.pre_grasp_joints = self._deg_to_rad(-61.1, -3.7, -30.5, 2.0, -181.5,  84.7, -91.7)
-        self.grasp_joints     = self._deg_to_rad(-27.6, 16.7, -53.4, 21.3, -168.8,  76.8, -78.9)
-        self.lift_joints      = self._deg_to_rad(-41.5, -12.8, -46.9, 19.6, -176.6,  62.0, -100.9)
-        self.drop_joints      = self._deg_to_rad(-35.0, -25.0, 0.0, 75.0, -160.0,  -10.0, -110.0)
+        self.pre_grasp_joints = self.planner.deg_to_rad([-61.1, -3.7, -30.5, 2.0, -181.5,  84.7, -91.7])
+        self.grasp_joints     = self.planner.deg_to_rad([-27.6, 16.7, -53.4, 21.3, -168.8,  76.8, -78.9])
+        self.lift_joints      = self.planner.deg_to_rad([-41.5, -12.8, -46.9, 19.6, -176.6,  62.0, -100.9])
+        self.drop_joints      = self.planner.deg_to_rad([-35.0, -25.0, 0.0, 75.0, -160.0,  -10.0, -110.0])
 
         # publishers
         #self.call_detection_pub = self.create_publisher(Bool, 'behavior/enable_pot_detection', 10)
@@ -51,7 +52,7 @@ class ManipulationPlannerNode(Node):
 
         self.should_run = False
         #self.pot_center = None
-        self.chute_in_position= False
+        self.chute_in_position = False
 
 
     # def trigger_cb(self, request, response):
@@ -68,6 +69,7 @@ class ManipulationPlannerNode(Node):
         if msg.data:
             self.logger.info('Received planting command')
             self.should_run = True
+            self.chute_in_position = False
         else:
             self.logger.info('Received stop command')
             self.should_run = False
@@ -94,57 +96,59 @@ class ManipulationPlannerNode(Node):
 
         # Step 1: joint-space to pre-grasp
         self.get_logger().info('Step 1: Moving to Pre Grasp')
-        if not self._call_plan_joint(self.pre_grasp_joints):
+        if not self.planner._call_plan_joint(self.pre_grasp_joints):
             return False
-        if not self._call_plan_exec():
+        if not self.planner._call_plan_exec():
             return False
 
         # Step 2: open gripper
-        # self.logger.info('Step 2: Open gripper...')
-        # if not self.planner.open_gripper():
-        #     self.logger.error('Failed at step 2')
-        #     return False
+        self.logger.info('Step 2: Open gripper...')
+        if not self.planner.open_gripper():
+            self.logger.error('Failed at step 2')
+            return False
 
         # move to grasp
         self.get_logger().info('Step 3: Moving towards to grasp...')
-        if not self._call_plan_joint(self.grasp_joints):
-            return
-        if not self._call_plan_exec():
-            return
+        if not self.planner._call_plan_joint(self.grasp_joints):
+            return False
+        if not self.planner._call_plan_exec():
+            return False
 
         #Step 4: close gripper
-        # self.logger.info('Step 4: Close gripper...')
-        # if not self.planner.close_gripper():
-        #     self.logger.error('Failed at step 4')
-        #     return False
+        self.logger.info('Step 4: Close gripper...')
+        if not self.planner.close_gripper():
+            self.logger.error('Failed at step 4')
+            return False
 
         # Step 5: lift
         self.get_logger().info('Step 5: Lifting...')
-        if not self._call_plan_joint(self.lift_joints):
+        if not self.planner._call_plan_joint(self.lift_joints):
             return False
-        if not self._call_plan_exec():
+        if not self.planner._call_plan_exec():
             return False
 
         # Step 6: move to drop
         self.get_logger().info('Step 6: Moving to Waypoint B')
-        if not self._call_plan_joint(self.drop_joints):
+        if not self.planner._call_plan_joint(self.drop_joints):
             return False
-        if not self._call_plan_exec():
+        if not self.planner._call_plan_exec():
             return False
 
         # wait for chute in position command before releasing seedling
+        self.logger.info(f"chute_in_position: {self.chute_in_position}")
         while not self.chute_in_position:
             self.logger.info('Waiting for chute to be in position before dropping seedling...')
             time.sleep(0.5)
 
         # Step 7: release
+        self.logger.info('Step 7: Releasing seedling...')
         if self.chute_in_position:
             self.logger.info('Chute is in position, proceeding to drop')
 
-            # open gripper to release seedling
-            # if not self.planner.open_gripper():
-            #     self.logger.error('Failed to open gripper at drop pose')
-            #     return
+            #open gripper to release seedling
+            if not self.planner.open_gripper():
+                self.logger.error('Failed to open gripper at drop pose')
+                return
             
             self.logger.info('Seedling dropped successfully')
             self.seedling_dropped_pub.publish(Bool(data=True))

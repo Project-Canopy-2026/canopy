@@ -40,7 +40,7 @@ class Planner:
 
         self.logger.info('Waiting for MoveGroup action server...')
         self.move_client.wait_for_server()
-        #self._wait_for_services()
+        self._wait_for_services()
         self.logger.info('Planner ready.')
 
         self.ee_link = "tool_tcp"
@@ -49,12 +49,12 @@ class Planner:
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, node)
 
         self.ik_client = node.create_client(GetPositionIK, '/compute_ik')
-        self.logger.info('Waiting for /compute_ik service...')
-        self.ik_client.wait_for_service()
+        #self.logger.info('Waiting for /compute_ik service...')
+        #self.ik_client.wait_for_service()
         # self.arm_group_name = "xarm7"
 
-        self.plan_joint = self.create_client(PlanJoint, '/xarm_joint_plan')
-        self.plan_exec = self.create_client(PlanExec, '/xarm_exec_plan')
+        self.plan_joint = node.create_client(PlanJoint, '/xarm_joint_plan')
+        self.plan_exec = node.create_client(PlanExec, '/xarm_exec_plan')
 
     # ── helpers ────────────────────────────────────────────────────────
     def _wait_for_services(self):
@@ -96,6 +96,18 @@ class Planner:
     # ── collision scene ────────────────────────────────────────────────
     def setup_collision_scene(self):
         self.logger.info('Setting up collision scene...')
+
+        # Remove any stale objects first
+        scene = PlanningScene()
+        scene.is_diff = True
+        for name in ['rail_left', 'rail_right']:
+            obj = CollisionObject()
+            obj.id = name
+            obj.operation = CollisionObject.REMOVE
+            scene.world.collision_objects.append(obj)
+        self.scene_pub.publish(scene)
+        time.sleep(0.5)
+
         scene = PlanningScene()
         scene.is_diff = True
 
@@ -250,11 +262,23 @@ class Planner:
     def close_gripper(self):
         return self._call_gripper(self.gripper_close, 'close')
 
+    # def _call_gripper(self, client, action):
+    #     req = Trigger.Request()
+    #     future = client.call_async(req)
+    #     while not future.done():
+    #         time.sleep(0.01)
+    #     result = future.result()
+    #     if not result.success:
+    #         self.logger.error(f'Gripper {action} failed')
+    #         return False
+    #     self.logger.info(f'Gripper {action} success')
+    #     return True
+    
     def _call_gripper(self, client, action):
         req = Trigger.Request()
         future = client.call_async(req)
         while not future.done():
-            time.sleep(0.01)
+            time.sleep(0.05)
         result = future.result()
         if not result.success:
             self.logger.error(f'Gripper {action} failed')
@@ -388,30 +412,31 @@ class Planner:
 
     def _call_plan_joint(self, joint_angles):
         """Sends a list of 7 joint angles to the MoveIt Joint Planner."""
-        self.get_logger().info('Waiting for /xarm_joint_plan service...')
+        self.logger.info('Waiting for /xarm_joint_plan service...')
         self.plan_joint.wait_for_service()
         
         req = PlanJoint.Request()
         req.target = joint_angles
         
-        # Send the request
         future = self.plan_joint.call_async(req)
-        rclpy.spin_until_future_complete(self, future)
-        
+        while not future.done():
+            time.sleep(0.05)
+
         if future.result() is not None and future.result().success:
-            self.get_logger().info('Joint plan successful!')
+            self.logger.info('Joint plan successful!')
             return True
         else:
-            self.get_logger().error('Failed to generate joint plan.')
+            self.logger.error('Failed to generate joint plan.')
             return False
 
     def _call_plan_exec(self):
         req = PlanExec.Request()
         req.wait = True
         future = self.plan_exec.call_async(req)
-        rclpy.spin_until_future_complete(self, future)
+        while not future.done():
+            time.sleep(0.05)
         result = future.result()
         if not result.success:
-            self.get_logger().error('PlanExec failed')
+            self.logger.error('PlanExec failed')
             return False
         return True

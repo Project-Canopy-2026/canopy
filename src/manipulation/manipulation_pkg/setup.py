@@ -29,7 +29,7 @@ setup(
 	entry_points={
    	 'console_scripts': [
        	 'planner_node = manipulation_pkg.planner_node:main',
-         'deterministic_planner_node = manipulation_pkg.deterministic_planner_node_old:main'
+         'deterministic_planner_node = manipulation_pkg.deterministic_planner_node:main'
    	 ],
     },
 
