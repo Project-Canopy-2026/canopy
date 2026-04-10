@@ -57,7 +57,7 @@ ufactory_driver:
       set_teach_sensitivity: false
       set_gripper_mode: false
       set_gripper_enable: false
-      set_tgpio_modbus_timeout: false
+      set_tgpio_modbus_timeout: true
       set_bio_gripper_speed: false
       set_collision_rebound: false
       set_fence_mode: false
@@ -79,8 +79,8 @@ ufactory_driver:
       set_servo_attach: false
       set_servo_detach: false
       set_reduced_tcp_boundary: false
-      get_tgpio_modbus_baudrate: false
-      set_tgpio_modbus_baudrate: false
+      get_tgpio_modbus_baudrate: true
+      set_tgpio_modbus_baudrate: true
       get_checkset_default_baud: false
       set_checkset_default_baud: false
       get_gripper_position: false
@@ -133,7 +133,7 @@ ufactory_driver:
       robotiq_open: false
       robotiq_close: false
       robotiq_get_status: false
-      getset_tgpio_modbus_data: false
+      getset_tgpio_modbus_data: true
       save_record_trajectory: false
       load_trajectory: false
       playback_trajectory: false
