@@ -1,6 +1,6 @@
 import os
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, TimerAction, OpaqueFunction
+from launch.actions import IncludeLaunchDescription, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import PathJoinSubstitution
 from launch_ros.actions import Node
@@ -36,26 +36,21 @@ def generate_launch_description():
         parameters=[config],
     )
 
-    # planner node — delayed 15s, reads robot description from move_group
-    # planner_node = TimerAction(
-    #     period=5.0,
-    #     actions=[
-    #         Node(
-    #             package='manipulation_pkg',
-    #             executable='planner_node',
-    #             name='manipulation_planner',
-    #             output='screen',
-    #             parameters=[{'use_sim_time': False}],
-    #             remappings=[
-    #                 ('robot_description', '/robot_description'),
-    #                 ('robot_description_semantic', '/robot_description_semantic'),
-    #             ],
-    #         )
-    #     ]
-    # )
+    # planner node — delayed 15s to let MoveIt2 fully start
+    planner_node = TimerAction(
+        period=15.0,
+        actions=[
+            Node(
+                package='manipulation_pkg',
+                executable='planner_node',
+                name='manipulation_planner',
+                output='screen',
+            )
+        ]
+    )
 
     return LaunchDescription([
         xarm_launch,
         gripper_node,
-        # planner_node,
+        planner_node,
     ])
