@@ -1,3 +1,4 @@
+#planner_node.py
 import math
 import time
 import rclpy
@@ -13,15 +14,19 @@ class ManipulationPlanner(Node):
     def __init__(self):
         super().__init__('manipulation_planner')
 
-        # self.pre_grasp_joints = self._deg_to_rad(-90.0, 0.00, 0.0, 10.0, -180.0,  80.0, -90)
-        # self.grasp_joints     = self._deg_to_rad(-71.2, 9, -17.8, 22.8, -180.0,  75.7, -90)
-        # self.lift_joints      = self._deg_to_rad(-80.0, -30.0, -10.0, 60.0, -160.0,  0.0, -110.0)
-        
-        self.pre_grasp_joints = self._deg_to_rad(-61.1, -3.7, -30.5, 2.0, -181.5,  84.7, -91.7)
-        self.grasp_joints     = self._deg_to_rad(-27.6, 16.7, -53.4, 21.3, -168.8,  76.8, -78.9)
-        self.lift_joints      = self._deg_to_rad(-41.5, -12.8, -46.9, 19.6, -176.6,  62.0, -100.9)
-        self.drop_joints      = self._deg_to_rad(-35.0, -25.0, 0.0, 75.0, -160.0,  -10.0, -110.0)
-        
+        # grasp orientation (point A)
+        gr, gp, gy = 90.0, -90.0, 0.0
+        # drop orientation (point B)
+        dr, dp, dy = 90.0, -90.0, 90.0
+
+        self.wpA_joints = self._deg_to_rad(-90.0, 0.00, 0.0, 10.0, -180.0,  80.0, 180.0)
+        self.wpB_joints = self._deg_to_rad( 0.00,-60.0, 0.0, 60.0, -180.0, -30.0, 180.0)
+        self.grasp_pose = self._make_pose(0.0, -0.450, 0.160,  gr, gp, gy)
+        # self.pre_grasp_pose = self._make_pose(0.3, 0.0, 0.4, 0.0, 0.0, 0.0)
+        # self.grasp_pose     = self._make_pose(0.0, -0.500, 0.200,  gr, gp, gy)
+        self.lift_pose      = self._make_pose(0.0, -0.400, 0.550,  gr, gp, gy)
+        self.drop_pose      = self._make_pose( 0.500, -0.2000, 0.550, dr, dp, dy)
+
         self.plan_pose     = self.create_client(PlanPose, '/xarm_pose_plan')
         self.plan_joint    = self.create_client(PlanJoint, '/xarm_joint_plan')
         self.plan_exec     = self.create_client(PlanExec, '/xarm_exec_plan')
@@ -55,6 +60,7 @@ class ManipulationPlanner(Node):
             math.radians(float(j6)), 
             math.radians(float(j7))
         ]
+
 
     def _make_pose(self, x, y, z, roll_deg=0.0, pitch_deg=0.0, yaw_deg=0.0):
         pose = Pose()
@@ -173,50 +179,64 @@ class ManipulationPlanner(Node):
 
         self.setup_collision_scene()
 
-        self.get_logger().info('Step 1: Moving to Pre Grasp')
-        if not self._call_plan_joint(self.pre_grasp_joints):
+        self.get_logger().info('Step 0: Moving to Waypoint A')
+        if not self._call_plan_joint(self.wpA_joints):
             return
         if not self._call_plan_exec():
             return
-        # time.sleep(1.0)
+        time.sleep(1.0)
 
+        # self.get_logger().info('Step 1: Moving to pre-grasp...')
+        # if not self._call_plan_pose(self.pre_grasp_pose):
+        #     return
+        # if not self._call_plan_exec():
+        #     return
+        
+        # time.sleep(1.0)
 
         self.get_logger().info('Step 2: Opening gripper...')
         if not self._call_gripper(self.gripper_open, 'open'):
             return
         
-        # time.sleep(1.0)
+        time.sleep(1.0)
 
         self.get_logger().info('Step 3: Moving towards to grasp...')
-        if not self._call_plan_joint(self.grasp_joints):
+        if not self._call_plan_pose(self.grasp_pose):
             return
         if not self._call_plan_exec():
             return
         
-        # time.sleep(1.0)
+        time.sleep(1.0)
 
         self.get_logger().info('Step 4: Closing gripper...')
         if not self._call_gripper(self.gripper_close, 'close'):
             return
         
-        # time.sleep(1.0)
+        time.sleep(1.0)
 
         self.get_logger().info('Step 5: Lifting...')
-        if not self._call_plan_joint(self.lift_joints):
+        if not self._call_plan_pose(self.lift_pose):
             return
         if not self._call_plan_exec():
             return
         
-        # time.sleep(1.0)
+        time.sleep(1.0)
 
-        self.get_logger().info('Step 6: Moving to Waypoint B')
-        if not self._call_plan_joint(self.drop_joints):
+        self.get_logger().info('Step 5.5: Moving to Waypoint B')
+        if not self._call_plan_joint(self.wpB_joints):
             return
         if not self._call_plan_exec():
             return
         
-        # time.sleep(1.0)
+        time.sleep(1.0)
 
+        self.get_logger().info('Step 6: Moving to drop waypoint...')
+        if not self._call_plan_pose(self.drop_pose):
+            return
+        if not self._call_plan_exec():
+            return
+        
+        time.sleep(1.0)
 
         self.get_logger().info('Step 7: Releasing object...')
         if not self._call_gripper(self.gripper_open, 'open'):
