@@ -364,6 +364,7 @@ class Planner:
         req.ik_request.group_name = cfg.PLANNING_GROUP
         req.ik_request.ik_link_name = self.ee_link
         req.ik_request.avoid_collisions = True
+        req.ik_request.robot_state.is_diff = True
         req.ik_request.timeout.sec = 1
 
         pose_stamped = PoseStamped()
