@@ -11,6 +11,10 @@ from matplotlib import pyplot as plt
 import cv2
 from enum import IntEnum
 
+from tf2_ros import Buffer, TransformListener
+from rclpy.duration import Duration
+from scipy.spatial.transform import Rotation as R
+
 # ROS2 message definitions
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from geometry_msgs.msg import Pose, Point
@@ -109,7 +113,7 @@ def pointcloud2_to_array(cloud_msg, squeeze=True):
         return np.reshape(cloud_arr, (cloud_msg.width,))
     else:
         return np.reshape(cloud_arr, (cloud_msg.height, cloud_msg.width))
-
+    
 
 class OccupancyGridNode(Node):
     def __init__(self):
@@ -117,9 +121,83 @@ class OccupancyGridNode(Node):
 
         self.setUpParameters()
 
-        self.create_subscription(PointCloud2, "/velodyne_points", self.pcdCb, 1)
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+        self.last_cloud_time = None
+
+        lidar_sensor_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=5
+        )
+        self.create_subscription(PointCloud2, "/nonground", self.pcdCb, lidar_sensor_qos)
 
         self.occ_grid_pub = self.create_publisher(OccupancyGrid, "/cost/occupancy", 1)
+         # Publish a free (all-zero) grid at 10 Hz when no Velodyne data is available
+        self.create_timer(0.1, self.publishFreeGridIfStale)
+
+
+    def publishFreeGridIfStale(self):
+        if self.last_cloud_time is not None:
+            age = self.get_clock().now() - self.last_cloud_time
+            if age < Duration(seconds=0.3):
+                return
+            self.publishFreeGrid()
+
+    def publishFreeGrid(self):
+        RES = 0.2
+        ORIGIN_X_PX = 40
+        ORIGIN_X_M = ORIGIN_X_PX * RES
+        ORIGIN_Y_PX = 50
+        ORIGIN_Y_M = ORIGIN_Y_PX * RES
+        GRID_WIDTH = 100
+        GRID_HEIGHT = GRID_WIDTH
+
+
+        grid = np.zeros((GRID_HEIGHT, GRID_WIDTH), dtype=np.int8)
+
+
+        origin = Point(x=-ORIGIN_X_M, y=-ORIGIN_Y_M)
+        info = MapMetaData(resolution=RES)
+        info.origin.position = origin
+
+
+        msg = numpy_to_occupancy_grid(grid, info)
+        msg.header.frame_id = "base_link"
+        msg.header.stamp = self.get_clock().now().to_msg()
+
+
+        self.occ_grid_pub.publish(msg)
+
+
+    def transform_points_velodyne_to_base(self, pts, cloud_frame):
+        try:
+            tf_msg = self.tf_buffer.lookup_transform(
+                "base_link",
+                cloud_frame,
+                rclpy.time.Time(),
+                timeout=Duration(seconds=0.2)
+            )
+        except Exception as e:
+            self.get_logger().warn(f"Could not get transform {cloud_frame} -> base_link: {e}")
+            return None
+
+        tx = tf_msg.transform.translation.x
+        ty = tf_msg.transform.translation.y
+        tz = tf_msg.transform.translation.z
+
+        qx = tf_msg.transform.rotation.x
+        qy = tf_msg.transform.rotation.y
+        qz = tf_msg.transform.rotation.z
+        qw = tf_msg.transform.rotation.w
+
+        rot = R.from_quat([qx, qy, qz, qw]).as_matrix()
+        trans = np.array([tx, ty, tz], dtype=np.float32)
+
+        pts_base = (rot @ pts.T).T + trans
+        return pts_base
+
 
         # GPS-only mode: no LiDAR available, publish a free grid instead.
         # Risk: robot won't avoid any real obstacles.
@@ -138,6 +216,8 @@ class OccupancyGridNode(Node):
     #     self.occ_grid_pub.publish(grid)
     
     def pcdCb(self, msg: PointCloud2):
+        self.last_cloud_time = self.get_clock().now()
+
         pts = pointcloud2_to_array(msg)
 
         pts = pts.flatten()
@@ -145,6 +225,10 @@ class OccupancyGridNode(Node):
 
         # Remove any NaN/Inf points (out-of-range returns)
         pts = pts[np.isfinite(pts).all(axis=1)]
+
+        pts = self.transform_points_velodyne_to_base(pts, msg.header.frame_id)
+        if pts is None:
+            return
 
         # self.get_logger().info(f"Got point cloud with shape {arr.shape}: {arr[0]}!")
 
@@ -156,11 +240,10 @@ class OccupancyGridNode(Node):
         GRID_WIDTH = 100
         GRID_HEIGHT = GRID_WIDTH
 
-        print(pts)
-
         # Now we need to project everything to an occupancy grid
         arr = pts / RES
-        arr = arr.astype(np.int8)
+        #arr = arr.astype(np.int8)
+        arr = arr.astype(np.int32)
 
         # TODO: Perform PROPER plane segmentation
         # For now, we'll naively check height
