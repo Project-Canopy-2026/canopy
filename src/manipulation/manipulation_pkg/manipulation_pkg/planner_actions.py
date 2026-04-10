@@ -192,7 +192,7 @@ class Planner:
 
         return self._send_goal(goal, retries)
 
-    # ── move to cartesian pose ─────────────────────────────────────────
+   
     def move_cartesian(self, pose, pipeline='ompl', planner='RRTConnect',
                        constrained=False, reference_pose=None, retries=None):
         goal = MoveGroup.Goal()

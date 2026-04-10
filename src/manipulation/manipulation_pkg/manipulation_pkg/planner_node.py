@@ -31,27 +31,50 @@ class ManipulationPlannerNode(Node):
         )
         #elf.lift_pose.orientation = self.grasp_pose.orientation
 
-        self.should_run = False
-        self.create_service(Trigger, '/planner/trigger', self.trigger_cb)
+        #self.create_service(Trigger, '/planner/trigger', self.trigger_cb)
 
-        self.get_logger().info('All ready. Call /planner/trigger to start.')
+        #self.get_logger().info('All ready. Call /planner/trigger to start.')
 
-        self.call_detection = self.create_publisher(Bool, 'behavior/enable_pot_detection', 10)
+        # publishers
+        self.call_detection_pub = self.create_publisher(Bool, 'behavior/enable_pot_detection', 10)
+        self.seedling_dropped_pub = self.create_publisher(Bool, 'behavior/seedling_dropped', 10)
         
+        # subscribers
         self.create_subscription(PointStamped, 'pot/center_point', self.pot_center_callback, 10)
+        self.create_subscription(Bool, 'behavior/do_planting', self.start_planting_callback, 10)
+        self.create_subscription(Bool, '/chute_in_position', self.chute_in_position_callback, 10)
 
+        self.should_run = False
         self.pot_center = None
+        self.chute_in_position= False
 
 
-    def trigger_cb(self, request, response):
-        if self.should_run:
-            response.success = False
-            response.message = 'Already running'
-        else:
+    # def trigger_cb(self, request, response):
+    #     if self.should_run:
+    #         response.success = False
+    #         response.message = 'Already running'
+    #     else:
+    #         self.should_run = True
+    #         response.success = True
+    #         response.message = 'Sequence triggered'
+    #     return response
+
+    def start_planting_callback(self, msg: Bool):
+        if msg.data:
+            self.logger.info('Received planting command')
             self.should_run = True
-            response.success = True
-            response.message = 'Sequence triggered'
-        return response
+        else:
+            self.logger.info('Received stop command')
+            self.should_run = False
+
+
+    def chute_in_position_callback(self, msg: Bool):
+        if msg.data:
+            self.logger.info('Received chute in position command')
+            self.chute_in_position = True
+        else:
+            self.logger.info('Received chute not in position command')
+            self.chute_in_position = False
 
 
     def pot_center_callback(self, msg: PointStamped):
@@ -79,13 +102,13 @@ class ManipulationPlannerNode(Node):
         # run pot detector until we get a valid detection
         while self.pot_center is None:
             self.logger.info('Running pot detection')
-            self.call_detection.publish(Bool(data=True))
+            self.call_detection_pub.publish(Bool(data=True))
             time.sleep(0.5)
 
         self.logger.info(f'Pot detected at: {self.pot_center}')
         # pot center in link_base (arm base) frame
 
-        # update grasp pose
+        # update grasp poseshould_run
         self.grasp_pose = self.planner.get_grasp_pose(self.pot_center)
 
         self.logger.info(f'Grasp pose calculated: {self.grasp_pose}')
@@ -132,7 +155,7 @@ class ManipulationPlannerNode(Node):
         # # Step 5: lift
         # self.logger.info('Step 5: Lift (Pilz LIN)...')
         # success = self.planner.move_cartesian(
-        #     self.lift_pose,
+        #     self.lift_pose,should_run
         #     pipeline='pilz_industrial_motion_planner',
         #     planner='LIN',
         #     constrained=True,
@@ -153,16 +176,29 @@ class ManipulationPlannerNode(Node):
         # self.logger.info('Step 6: Drop (joint)...')
         # if not self.planner.move_joints(cfg.DROP_JOINTS_DEG):
         #     self.logger.error('Failed at step 6')
-        #     return False
+        #     return Falseshould_run
 
-        # # Step 7: release
-        # self.logger.info('Step 7: Release...')
-        # if not self.planner.open_gripper():
-        #     self.logger.error('Failed at step 7')
-        #     return False
+        # wait for chute in position command before releasing seedling
+        while not self.chute_in_position:
+            self.logger.info('Waiting for chute to be in position before dropping seedling...')
+            time.sleep(0.5)
 
-        # self.logger.info('=== Pick and place complete ===')
-        # return True
+        # Step 7: release
+        if self.chute_in_position:
+            self.logger.info('Chute is in position, proceeding to drop')
+
+            # open gripper to release seedling
+            if not self.planner.open_gripper():
+                self.logger.error('Failed to open gripper at drop pose')
+                return
+            
+            self.logger.info('Seedling dropped successfully')
+            self.seedling_dropped_pub.publish(Bool(data=True))
+        else:
+            self.logger.info('Received chute not in position command, aborting drop')
+
+        self.logger.info('=== Pick and place complete ===')
+        return True
 
     def run(self):
         while rclpy.ok():
