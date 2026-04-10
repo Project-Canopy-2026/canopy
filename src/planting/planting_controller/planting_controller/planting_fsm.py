@@ -17,8 +17,8 @@ class State(enum.Enum):
     DRILLING_DOWN   = 'DRILLING_DOWN'   # linak runs out to max position 64255[transition: DONE:LINAK1]
     DRILLING_DWELL  = 'DRILLING_DWELL'  # bldc continuous spin [transition: 10s timer]
     AUGER_RETRACT   = 'AUGER_RETRACT'   # bldc spins other way, linak runs in to max position 150 [transition: DONE:LINAK1]
-    WAIT_SEEDLING   = 'WAIT_SEEDLING'   # bldc stops, wait for seedling_dropped topic [transition: seedling_dropped]
-    SHIFT_TO_CHUTE  = 'SHIFT_TO_CHUTE'  # stepper moves shift_distance_cm [transition: DONE:STEPPER]
+    SHIFT_TO_CHUTE  = 'SHIFT_TO_CHUTE'  # bldc stops, stepper moves shift_distance_cm [transition: DONE:STEPPER → publish /chute_in_position]
+    WAIT_SEEDLING   = 'WAIT_SEEDLING'   # wait for seedling_dropped topic [transition: seedling_dropped]
     CHUTE_DOWN      = 'CHUTE_DOWN'      # linak_2 down [transition: DONE:LINAK2]
     CHUTE_RETRACT   = 'CHUTE_RETRACT'   # linak_2 up [transition: DONE:LINAK2]
     SHIFT_TO_AUGER  = 'SHIFT_TO_AUGER'  # stepper returns [transition: DONE:STEPPER]
@@ -67,9 +67,10 @@ class PlantingFsmNode(Node):
         self.declare_parameter('auger_rpm',            75)
 
         # ── Publishers ────────────────────────────────────────────────────
-        self._arduino_pub = self.create_publisher(String, '/arduino_cmd',   10)
-        self._linak_pub   = self.create_publisher(String, '/linak_cmd',     10)
-        self._state_pub   = self.create_publisher(String, 'planting_state', 10)
+        self._arduino_pub    = self.create_publisher(String, '/arduino_cmd',        10)
+        self._linak_pub      = self.create_publisher(String, '/linak_cmd',          10)
+        self._state_pub      = self.create_publisher(String, 'planting_state',      10)
+        self._chute_pos_pub  = self.create_publisher(Bool,   '/chute_in_position',  10)
 
         # ── Subscribers ───────────────────────────────────────────────────
         self.create_subscription(Empty,  '/behavior/do_plant', self._on_do_planting,  10)
@@ -110,7 +111,9 @@ class PlantingFsmNode(Node):
 
         if token == 'DONE:STEPPER':
             if state == State.SHIFT_TO_CHUTE:
-                self._enter(State.CHUTE_DOWN)
+                self._chute_pos_pub.publish(Bool(data=True))
+                self.get_logger().info('→ /chute_in_position: True')
+                self._enter(State.WAIT_SEEDLING)
             elif state == State.SHIFT_TO_AUGER:
                 self._enter(State.COMPLETE)
         elif token.startswith('ERR:'):
@@ -126,7 +129,7 @@ class PlantingFsmNode(Node):
             if state == State.DRILLING_DOWN:
                 self._enter(State.DRILLING_DWELL)
             elif state == State.AUGER_RETRACT:
-                self._enter(State.WAIT_SEEDLING)
+                self._enter(State.SHIFT_TO_CHUTE)
 
         elif token == 'DONE:LINAK2':
             if state == State.CHUTE_DOWN:
@@ -187,14 +190,14 @@ class PlantingFsmNode(Node):
             self._linak(f'LINAK,1,UP,{dur:.2f}')
             # advances on DONE:LINAK1
 
-        elif state == State.WAIT_SEEDLING:
-            self._arduino('bldc,stop')
-            self.get_logger().info('Waiting for seedling_dropped...')
-
         elif state == State.SHIFT_TO_CHUTE:
+            self._arduino('bldc,stop')
             shift_mm = p('shift_distance_cm').get_parameter_value().double_value * 10.0
             self._arduino(f'stepper,left,{shift_mm:.1f}')
-            # advances on DONE:STEPPER
+            # advances on DONE:STEPPER → publishes /chute_in_position True → WAIT_SEEDLING
+
+        elif state == State.WAIT_SEEDLING:
+            self.get_logger().info('Waiting for seedling_dropped...')
 
         elif state == State.CHUTE_DOWN:
             dur = p('chute_distance_cm').get_parameter_value().double_value / LINAK_SPEED_CM_S

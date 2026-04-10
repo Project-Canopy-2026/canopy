@@ -26,9 +26,10 @@ class PlantingFsmTestNode(Node):
         self._do_plant_pub     = self.create_publisher(Empty,  '/behavior/do_plant',  10)
         self._seedling_pub     = self.create_publisher(Bool,   'seedling_dropped',    10)
 
-        self.create_subscription(String, 'planting_state',  self._on_state,         10)
-        self.create_subscription(String, '/linak_status',   self._on_linak_status,  10)
-        self.create_subscription(String, '/arduino_status', self._on_arduino_status, 10)
+        self.create_subscription(String, 'planting_state',    self._on_state,            10)
+        self.create_subscription(String, '/linak_status',     self._on_linak_status,     10)
+        self.create_subscription(String, '/arduino_status',   self._on_arduino_status,   10)
+        self.create_subscription(Bool,   '/chute_in_position', self._on_chute_in_position, 10)
 
     def _on_state(self, msg: String):
         print(f'  [state]   {msg.data}')
@@ -38,6 +39,9 @@ class PlantingFsmTestNode(Node):
 
     def _on_arduino_status(self, msg: String):
         print(f'  [arduino] {msg.data}')
+
+    def _on_chute_in_position(self, msg: Bool):
+        print(f'  [chute_in_position] {msg.data}  ← gripper system: drop seedling now')
 
     def send_do_plant(self):
         self._do_plant_pub.publish(Empty())
