@@ -14,6 +14,8 @@ manipulation_ws/src/
     │   └── full_system.launch.py     — launches everything together
     └── config/
         └── robot_params.yaml         — runtime parameters (robot IP, etc.)
+
+
 Communication flow:
 /planner/trigger (std_srvs/Trigger)
         ↓
@@ -34,6 +36,8 @@ planner.py  (Planner)
                                   OpenRB-150 (Modbus RTU)
                                          ↓
                                   XL330 Dynamixel servo
+
+
 Step sequence (executor.py):
 Step 1   — move_joints(PRE_GRASP_JOINTS_DEG)        OMPL joint space
 Step 1.5 — get_current_eef_pose()                   TF lookup
