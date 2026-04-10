@@ -10,9 +10,10 @@ from geometry_msgs.msg import Pose, PoseStamped
 from moveit_msgs.msg import (
     CollisionObject, PlanningScene, Constraints,
     OrientationConstraint, PositionConstraint,
-    BoundingVolume, JointConstraint, RobotState
+    BoundingVolume, JointConstraint, RobotState,
+    DisplayTrajectory
 )
-from moveit_msgs.action import MoveGroup
+from moveit_msgs.action import MoveGroup, ExecuteTrajectory
 from moveit_msgs.msg import MoveItErrorCodes
 from moveit_msgs.srv import GetPositionIK
 from shape_msgs.msg import SolidPrimitive
@@ -38,8 +39,18 @@ class Planner:
         # planning scene publisher
         self.scene_pub = node.create_publisher(PlanningScene, '/planning_scene', 10)
 
+        # trajectory visualization publisher (RViz Motion Planning plugin)
+        self.display_traj_pub = node.create_publisher(
+            DisplayTrajectory, '/display_planned_path', 10
+        )
+
+        # execute pre-planned trajectory (separate from MoveGroup plan+exec)
+        self.exec_client = ActionClient(node, ExecuteTrajectory, '/execute_trajectory')
+
         self.logger.info('Waiting for MoveGroup action server...')
         self.move_client.wait_for_server()
+        self.logger.info('Waiting for ExecuteTrajectory action server...')
+        self.exec_client.wait_for_server()
         #self._wait_for_services()
         self.logger.info('Planner ready.')
 
@@ -136,31 +147,77 @@ class Planner:
         c.orientation_constraints.append(oc)
         return c
 
-    # ── send goal ──────────────────────────────────────────────────────
+    # ── planning / visualization / execution ───────────────────────────
+
+    def _plan(self, goal):
+        """Request a plan from MoveGroup (no execution). Returns RobotTrajectory or None."""
+        goal.request.plan_only = True
+        future = self.move_client.send_goal_async(goal)
+        while not future.done():
+            time.sleep(0.01)
+        goal_handle = future.result()
+        if not goal_handle.accepted:
+            return None
+        result_future = goal_handle.get_result_async()
+        while not result_future.done():
+            time.sleep(0.01)
+        result = result_future.result().result
+        if result.error_code.val == MoveItErrorCodes.SUCCESS:
+            return result.planned_trajectory
+        self.logger.warn(
+            f'Planning failed (code {result.error_code.val})'
+            f' | pipeline={goal.request.pipeline_id} planner={goal.request.planner_id}'
+        )
+        return None
+
+    def _visualize_trajectory(self, trajectory):
+        """Publish planned trajectory to /display_planned_path for RViz inspection."""
+        msg = DisplayTrajectory()
+        msg.model_id = cfg.PLANNING_GROUP
+        msg.trajectory = [trajectory]
+        msg.trajectory_start.is_diff = True
+        self.display_traj_pub.publish(msg)
+        self.logger.info(
+            f'[VIZ] Trajectory published to /display_planned_path — '
+            f'executing in {cfg.VIZ_PAUSE_SEC:.1f} s'
+        )
+        time.sleep(cfg.VIZ_PAUSE_SEC)
+
+    def _execute_trajectory(self, trajectory):
+        """Execute a pre-planned RobotTrajectory via /execute_trajectory action."""
+        goal = ExecuteTrajectory.Goal()
+        goal.trajectory = trajectory
+        future = self.exec_client.send_goal_async(goal)
+        while not future.done():
+            time.sleep(0.01)
+        goal_handle = future.result()
+        if not goal_handle.accepted:
+            self.logger.error('ExecuteTrajectory goal rejected')
+            return False
+        result_future = goal_handle.get_result_async()
+        while not result_future.done():
+            time.sleep(0.01)
+        result = result_future.result().result
+        if result.error_code.val != MoveItErrorCodes.SUCCESS:
+            self.logger.error(f'Execution failed (code {result.error_code.val})')
+            return False
+        return True
+
     def _send_goal(self, goal, retries=None):
         retries = retries or cfg.PLAN_RETRIES
         for attempt in range(retries):
-            future = self.move_client.send_goal_async(goal)
-            while not future.done():
-                time.sleep(0.01)
-            goal_handle = future.result()
-
-            if not goal_handle.accepted:
-                self.logger.warn(f'Goal rejected, attempt {attempt+1}/{retries}')
+            trajectory = self._plan(goal)
+            if trajectory is None:
+                self.logger.warn(f'Planning failed, attempt {attempt+1}/{retries}')
                 continue
 
-            result_future = goal_handle.get_result_async()
-            while not result_future.done():
-                time.sleep(0.01)
-            result = result_future.result().result
+            if cfg.VIZ_BEFORE_EXEC:
+                self._visualize_trajectory(trajectory)
 
-            if result.error_code.val == MoveItErrorCodes.SUCCESS:
+            if self._execute_trajectory(trajectory):
                 return True
 
-            self.logger.warn(
-                f'Move failed (code {result.error_code.val}), attempt {attempt+1}/{retries}'
-                f' | pipeline={goal.request.pipeline_id} planner={goal.request.planner_id}'
-            )
+            self.logger.warn(f'Execution failed, attempt {attempt+1}/{retries}')
 
         self.logger.error('Move failed after all retries')
         return False
@@ -294,9 +351,12 @@ class Planner:
 
         # get gripper cartesian position
         gripper_pose = self.get_gripper_pose()
+        if gripper_pose is None:
+            self.logger.error('Cannot compute grasp pose: TF lookup failed')
+            return None
 
         self.logger.info(f'Gripper pose at grasp calculation: {gripper_pose}')
-        
+
         gripper_pos = np.array([
             gripper_pose.position.x,
             gripper_pose.position.y,
@@ -381,7 +441,17 @@ class Planner:
             self.logger.warn(f'IK failed with error code {result.error_code.val}')
             return None
 
-        return list(result.solution.joint_state.position)
+        # IK returns positions for ALL robot joints in arbitrary order.
+        # Map by name and extract only the 7 arm joints in cfg.JOINT_NAMES order,
+        # then convert rad → deg to match move_joints()'s expected input units.
+        state = result.solution.joint_state
+        name_to_pos = dict(zip(state.name, state.position))
+        try:
+            joint_angles_rad = [name_to_pos[name] for name in cfg.JOINT_NAMES]
+        except KeyError as e:
+            self.logger.warn(f'IK solution missing joint {e}')
+            return None
+        return [math.degrees(a) for a in joint_angles_rad]
 
 
     # ── deterministic planner function ────────────────────────────────────────────────────

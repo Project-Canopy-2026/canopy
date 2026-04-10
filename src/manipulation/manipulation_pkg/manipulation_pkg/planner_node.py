@@ -108,8 +108,11 @@ class ManipulationPlannerNode(Node):
         self.logger.info(f'Pot detected at: {self.pot_center}')
         # pot center in link_base (arm base) frame
 
-        # update grasp poseshould_run
+        # update grasp pose
         self.grasp_pose = self.planner.get_grasp_pose(self.pot_center)
+        if self.grasp_pose is None:
+            self.logger.error('Failed to compute grasp pose (TF lookup failed)')
+            return False
 
         self.logger.info(f'Grasp pose calculated: {self.grasp_pose}')
 

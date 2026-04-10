@@ -45,3 +45,8 @@ COLLISION_BOXES = [
 # ── upright constraint tolerances (radians) ────────────────────────
 UPRIGHT_TOL_XY = 0.26   # ~15 degrees
 UPRIGHT_TOL_Z  = 6.28   # free rotation around z
+
+# ── RViz trajectory visualization ─────────────────────────────────
+# When True: plan → publish to /display_planned_path → wait → execute
+VIZ_BEFORE_EXEC = True
+VIZ_PAUSE_SEC   = 5.0   # seconds to inspect the trajectory in RViz before executing
