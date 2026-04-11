@@ -35,14 +35,14 @@ void loop() {
     command.trim();
     if (command.equalsIgnoreCase("O")) {
       dxl.setGoalPosition(DXL_ID, OPEN_POS, UNIT_DEGREE);
-      USB_SERIAL.println("Moving");
+      USB_SERIAL.println("Moving (opening)");
       while (dxl.readControlTableItem(ControlTableItem::MOVING, DXL_ID)) {
         delay(20);
       }
       USB_SERIAL.println("DONE");
     } else if (command.equalsIgnoreCase("C")) {
       dxl.setGoalPosition(DXL_ID, CLOSE_POS, UNIT_DEGREE);
-      USB_SERIAL.println("Moving");
+      USB_SERIAL.println("Moving (closing)");
       while (dxl.readControlTableItem(ControlTableItem::MOVING, DXL_ID)) {
         delay(20);
       }

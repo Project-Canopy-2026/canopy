@@ -6,6 +6,7 @@
  ============================================================================*/
  
 #include "xarm_planner/xarm_planner.h"
+#include <moveit/move_group_interface/move_group_interface.hpp>
 
 namespace xarm_planner
 {
@@ -29,7 +30,7 @@ XArmPlanner::XArmPlanner(const std::string& group_name)
 void XArmPlanner::init(const std::string& group_name) 
 {
     is_trajectory_ = false;
-    move_group_ = std::make_shared<::planning_interface::MoveGroupInterface>(node_, group_name);
+    move_group_ = std::make_shared<moveit::planning_interface::MoveGroupInterface>(node_, group_name);
     RCLCPP_INFO(node_->get_logger(), "Planning frame: %s", move_group_->getPlanningFrame().c_str());
     RCLCPP_INFO(node_->get_logger(), "End effector link: %s", move_group_->getEndEffectorLink().c_str());
     RCLCPP_INFO(node_->get_logger(), "Available Planning Groups:");
