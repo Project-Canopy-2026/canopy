@@ -59,7 +59,7 @@ CARTESIAN_JUMP_THRESHOLD = 0.3
 # ── collision scene ────────────────────────────────────────────────
 # (name, x, y, z, size_x, size_y, size_z) all in metres
 COLLISION_BOXES = [
-    ('floor',               0.0,   0.0,  -0.05, 3.0,  3.0,  0.05),
+    #('floor',               0.0,   0.0,  -0.05, 3.0,  3.0,  0.05),
     #('rail_left',          -0.30,  0.35,  0.085, 1.40, 0.29, 0.17),
     #('rail_right',         -0.30, -0.70,  0.085, 1.40, 0.29, 0.17),
     ('planting_assembly',   0.45,  0.0,   0.20,  0.2,  1.0,  0.5),

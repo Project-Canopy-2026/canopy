@@ -8,16 +8,27 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 
 def generate_launch_description():
 
-    localization = IncludeLaunchDescription(
+    planting = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
-                get_package_share_directory('localization'),
+                get_package_share_directory('planting_controller'),
                 'launch',
-                'localization_bringup.launch.py'
+                'planting_bringup.launch.py'
+            )
+        )
+    )
+
+    manipulation = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory('manipulation_pkg'),
+                'launch',
+                'arm_bringup.launch.py'
             )
         )
     )
 
     return LaunchDescription([
-        #localization,
+        planting,
+        manipulation,
     ])

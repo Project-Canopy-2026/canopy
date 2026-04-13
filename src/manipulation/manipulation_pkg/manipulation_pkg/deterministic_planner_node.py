@@ -10,7 +10,7 @@ from manipulation_pkg import arm_config as cfg
 from manipulation_pkg.planner_actions import Planner
 
 from geometry_msgs.msg import PointStamped
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, Empty
 
 class ManipulationPlannerNode(Node):
     def __init__(self):
@@ -35,7 +35,7 @@ class ManipulationPlannerNode(Node):
 
         #self.get_logger().info('All ready. Call /planner/trigger to start.')
 
-        self.pre_grasp_joints = self.planner.deg_to_rad([-61.1, -3.7, -30.5, 2.0, -181.5,  84.7, -91.7])
+        self.pre_grasp_joints = self.planner.deg_to_rad([-61.1, -3.7, -30.5, 2.0,  -181.5,  84.7, -91.7])
         self.grasp_joints     = self.planner.deg_to_rad([-27.6, 16.7, -53.4, 21.3, -168.8,  76.8, -78.9])
         self.lift_joints      = self.planner.deg_to_rad([-41.5, -12.8, -46.9, 19.6, -176.6,  62.0, -100.9])
         self.drop_joints      = self.planner.deg_to_rad([-35.0, -25.0, 0.0, 75.0, -160.0,  -10.0, -110.0])
@@ -48,11 +48,11 @@ class ManipulationPlannerNode(Node):
 
         # publishers
         #self.call_detection_pub = self.create_publisher(Bool, 'behavior/enable_pot_detection', 10)
-        self.seedling_dropped_pub = self.create_publisher(Bool, 'behavior/seedling_dropped', 10)
-
+        self.seedling_dropped_pub = self.create_publisher(Bool, '/behavior/seedling_dropped', 10)
+        
         # subscribers
         #self.create_subscription(PointStamped, 'pot/center_point', self.pot_center_callback, 10)
-        self.create_subscription(Bool, 'behavior/do_planting', self.start_planting_callback, 10)
+        self.create_subscription(Empty, '/behavior/do_planting', self.start_planting_callback, 10)
         self.create_subscription(Bool, '/chute_in_position', self.chute_in_position_callback, 10)
 
         self.should_run = False
@@ -74,21 +74,16 @@ class ManipulationPlannerNode(Node):
     #         response.message = 'Sequence triggered'
     #     return response
 
-    def _sim_auto_trigger(self):
-        """One-shot timer: auto-start pick-and-place when running in simulation."""
-        self.destroy_timer(self._sim_timer_handle)
-        self.logger.info('[SIM] Auto-triggering pick and place')
+    def start_planting_callback(self, msg: Empty):
+        self.logger.info('Received planting command')
+        self.logger.info('Received planting command')
+        self.logger.info('Received planting command')
+        self.logger.info('Received planting command')
+        self.logger.info('Received planting command')
+        self.logger.info('Received planting command')
+        self.logger.info('Received planting command')
         self.should_run = True
         self.chute_in_position = False
-
-    def start_planting_callback(self, msg: Bool):
-        if msg.data:
-            self.logger.info('Received planting command')
-            self.should_run = True
-            self.chute_in_position = False
-        else:
-            self.logger.info('Received stop command')
-            self.should_run = False
 
 
     def chute_in_position_callback(self, msg: Bool):
