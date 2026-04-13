@@ -58,6 +58,18 @@ def generate_launch_description():
         ]
     )
 
+    deterministic_planner_node = TimerAction(
+        period=15.0,
+        actions=[
+            Node(
+                package='manipulation_pkg',
+                executable='deterministic_planner_node',
+                name='manipulation_planner',
+                output='screen',
+            )
+        ]
+    )
+
     perception_node = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
@@ -93,5 +105,6 @@ def generate_launch_description():
         xarm_launch,
         gripper_node,
         planner_node,
-        perception_node,
+        # deterministic_planner_node,
+        #perception_node,
     ])

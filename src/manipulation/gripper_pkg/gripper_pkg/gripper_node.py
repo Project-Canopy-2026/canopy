@@ -1,5 +1,4 @@
 import rclpy
-import serial
 import time
 from rclpy.node import Node
 from std_srvs.srv import Trigger
@@ -11,15 +10,22 @@ class GripperNode(Node):
 
         self.declare_parameter('port', '/dev/ttyACM1')
         self.declare_parameter('baud', 57600)
+        self.declare_parameter('sim_mode', False)
 
-        port = self.get_parameter('port').get_parameter_value().string_value
-        baud = self.get_parameter('baud').get_parameter_value().integer_value
+        self.sim_mode = self.get_parameter('sim_mode').get_parameter_value().bool_value
 
-        self.get_logger().info(f'Connecting to Arduino on {port} at {baud}...')
-        self.ser = serial.Serial(port, baud, timeout=5)
-        time.sleep(2)
-        self.ser.reset_input_buffer()
-        self.get_logger().info('Serial connection established.')
+        if self.sim_mode:
+            self.get_logger().info('Gripper node starting in SIMULATION mode (no serial hardware).')
+            self.ser = None
+        else:
+            import serial
+            port = self.get_parameter('port').get_parameter_value().string_value
+            baud = self.get_parameter('baud').get_parameter_value().integer_value
+            self.get_logger().info(f'Connecting to Arduino on {port} at {baud}...')
+            self.ser = serial.Serial(port, baud, timeout=5)
+            time.sleep(2)
+            self.ser.reset_input_buffer()
+            self.get_logger().info('Serial connection established.')
 
         self.open_srv  = self.create_service(Trigger, 'gripper/open',  self.open_cb)
         self.close_srv = self.create_service(Trigger, 'gripper/close', self.close_cb)
@@ -38,6 +44,11 @@ class GripperNode(Node):
 
     def open_cb(self, request, response):
         self.get_logger().info('Service called: open gripper')
+        if self.sim_mode:
+            self.get_logger().info('[SIM] Gripper opened')
+            response.success = True
+            response.message = 'Opened (simulated)'
+            return response
         success = self._send_and_wait('O')
         response.success = success
         response.message = 'Opened' if success else 'Failed to open'
@@ -45,13 +56,18 @@ class GripperNode(Node):
 
     def close_cb(self, request, response):
         self.get_logger().info('Service called: close gripper')
+        if self.sim_mode:
+            self.get_logger().info('[SIM] Gripper closed')
+            response.success = True
+            response.message = 'Closed (simulated)'
+            return response
         success = self._send_and_wait('C')
         response.success = success
         response.message = 'Closed' if success else 'Failed to close'
         return response
 
     def destroy_node(self):
-        if self.ser.is_open:
+        if self.ser is not None and self.ser.is_open:
             self.ser.close()
         super().destroy_node()
 

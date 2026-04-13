@@ -15,11 +15,11 @@ from moveit_msgs.msg import (
 )
 from moveit_msgs.action import MoveGroup, ExecuteTrajectory
 from moveit_msgs.msg import MoveItErrorCodes
-from moveit_msgs.srv import GetPositionIK
+from moveit_msgs.srv import GetPositionIK, GetCartesianPath
 from shape_msgs.msg import SolidPrimitive
 import tf2_ros
 
-from xarm_msgs.srv import PlanPose, PlanExec, PlanJoint
+from xarm_msgs.srv import PlanExec, PlanJoint
 
 from manipulation_pkg import arm_config as cfg
 
@@ -60,12 +60,13 @@ class Planner:
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, node)
 
         self.ik_client = node.create_client(GetPositionIK, '/compute_ik')
-        self.logger.info('Waiting for /compute_ik service...')
-        self.ik_client.wait_for_service()
+        self.cartesian_path_client = node.create_client(GetCartesianPath, '/compute_cartesian_path')
+        #self.logger.info('Waiting for /compute_ik service...')
+        #self.ik_client.wait_for_service()
         # self.arm_group_name = "xarm7"
 
-        # self.plan_joint = self.create_client(PlanJoint, '/xarm_joint_plan')
-        # self.plan_exec = self.create_client(PlanExec, '/xarm_exec_plan')
+        self.plan_joint = node.create_client(PlanJoint, '/xarm_joint_plan')
+        self.plan_exec = node.create_client(PlanExec, '/xarm_exec_plan')
 
     # ── helpers ────────────────────────────────────────────────────────
     def _wait_for_services(self):
@@ -107,6 +108,18 @@ class Planner:
     # ── collision scene ────────────────────────────────────────────────
     def setup_collision_scene(self):
         self.logger.info('Setting up collision scene...')
+
+        # Remove any stale objects first
+        scene = PlanningScene()
+        scene.is_diff = True
+        for name in ['rail_left', 'rail_right']:
+            obj = CollisionObject()
+            obj.id = name
+            obj.operation = CollisionObject.REMOVE
+            scene.world.collision_objects.append(obj)
+        self.scene_pub.publish(scene)
+        time.sleep(0.5)
+
         scene = PlanningScene()
         scene.is_diff = True
 
@@ -151,7 +164,7 @@ class Planner:
 
     def _plan(self, goal):
         """Request a plan from MoveGroup (no execution). Returns RobotTrajectory or None."""
-        goal.request.plan_only = True
+        goal.planning_options.plan_only = True
         future = self.move_client.send_goal_async(goal)
         while not future.done():
             time.sleep(0.01)
@@ -223,7 +236,14 @@ class Planner:
         return False
 
     # ── move to joint angles ───────────────────────────────────────────
-    def move_joints(self, joint_angles_deg, retries=None):
+    def move_joints(self, joint_angles_deg, pipeline='pilz_industrial_motion_planner',
+                    planner='PTP', retries=None):
+        """Plan and execute a joint-space move.
+
+        Defaults to Pilz PTP, which produces smooth point-to-point motions with
+        trapezoidal velocity profiles.  Pass pipeline='ompl', planner='RRTConnect'
+        as a fallback when Pilz PTP fails.
+        """
         joint_angles_rad = self.deg_to_rad(joint_angles_deg)
         goal = MoveGroup.Goal()
         req = goal.request
@@ -232,8 +252,8 @@ class Planner:
         req.allowed_planning_time = cfg.PLANNING_TIME
         req.max_velocity_scaling_factor = cfg.MAX_VELOCITY_SCALING
         req.max_acceleration_scaling_factor = cfg.MAX_ACCELERATION_SCALING
-        req.pipeline_id = 'ompl'
-        req.planner_id = 'RRTConnect'
+        req.pipeline_id = pipeline
+        req.planner_id = planner
         req.start_state.is_diff = True
 
         joint_constraints = Constraints()
@@ -279,14 +299,14 @@ class Planner:
         pc.constraint_region = bv
         pc.weight = 1.0
 
-        # orientation constraint (goal)
+        # orientation constraint (goal) TODO: Loosen the tolerance to increase motion planning success rate
         oc = OrientationConstraint()
         oc.header.frame_id = cfg.BASE_FRAME
         oc.link_name = cfg.EEF_LINK
         oc.orientation = pose.orientation
         oc.absolute_x_axis_tolerance = 0.01
         oc.absolute_y_axis_tolerance = 0.01
-        oc.absolute_z_axis_tolerance = 0.01
+        oc.absolute_z_axis_tolerance = 0.01 
         oc.weight = 1.0
 
         goal_constraints = Constraints()
@@ -307,17 +327,43 @@ class Planner:
     def close_gripper(self):
         return self._call_gripper(self.gripper_close, 'close')
 
+    # def _call_gripper(self, client, action):
+    #     req = Trigger.Request()
+    #     future = client.call_async(req)
+    #     while not future.done():
+    #         time.sleep(0.01)
+    #     result = future.result()
+    #     if not result.success:
+    #         self.logger.error(f'Gripper {action} failed')
+    #         return False
+    #     self.logger.info(f'Gripper {action} success')
+    #     return True
+    
     def _call_gripper(self, client, action):
         req = Trigger.Request()
         future = client.call_async(req)
         while not future.done():
-            time.sleep(0.01)
+            time.sleep(0.05)
         result = future.result()
         if not result.success:
             self.logger.error(f'Gripper {action} failed')
             return False
         self.logger.info(f'Gripper {action} success')
         return True
+
+    # ── debug helpers ──────────────────────────────────────────────────
+    def log_current_eef_pose(self, label=''):
+        """Log the current EEF pose via TF — useful for diagnosing IK branch issues."""
+        pose = self.get_gripper_pose()
+        if pose is None:
+            return
+        prefix = f'[{label}] ' if label else ''
+        self.logger.info(
+            f'{prefix}EEF pose — '
+            f'pos: ({pose.position.x:.4f}, {pose.position.y:.4f}, {pose.position.z:.4f})  '
+            f'quat: ({pose.orientation.x:.4f}, {pose.orientation.y:.4f}, '
+            f'{pose.orientation.z:.4f}, {pose.orientation.w:.4f})'
+        )
 
     # ── grasp pose ──────────────────────────────────────────────────────
     def get_gripper_pose(self):
@@ -420,6 +466,15 @@ class Planner:
 
     
     def grasp_pose_to_joint_values(self, grasp_pose):
+        """Solve IK for `grasp_pose` seeded from the current robot state.
+
+        Using is_diff=True means the solver uses the live joint state as its seed,
+        so it finds the IK solution nearest to the current configuration rather than
+        exploring other branches. For a small lift this means only joint 2 moves.
+
+        Returns joint angles in degrees (matching move_joints input), or None on failure.
+        """
+        self.ik_client.wait_for_service()
         req = GetPositionIK.Request()
         req.ik_request.group_name = cfg.PLANNING_GROUP
         req.ik_request.ik_link_name = self.ee_link
@@ -454,34 +509,194 @@ class Planner:
         return [math.degrees(a) for a in joint_angles_rad]
 
 
+    # ── upright transport ──────────────────────────────────────────────
+    def _slerp_orientation(self, q1, q2, t):
+        """Spherical linear interpolation between two geometry_msgs Quaternions at parameter t."""
+        from scipy.spatial.transform import Rotation as R, Slerp
+        import numpy as np
+        rots = R.from_quat([
+            [q1.x, q1.y, q1.z, q1.w],
+            [q2.x, q2.y, q2.z, q2.w],
+        ])
+        slerp = Slerp([0.0, 1.0], rots)
+        mid = slerp(t).as_quat()
+        from geometry_msgs.msg import Quaternion
+        q = Quaternion()
+        q.x, q.y, q.z, q.w = float(mid[0]), float(mid[1]), float(mid[2]), float(mid[3])
+        return q
+
+    def make_transport_waypoints(self, grasp_orientation):
+        """Build via-poses for upright Cartesian transport with region-appropriate orientations.
+
+        wp1 (raise):        grasp_orientation — dynamic, confirmed reachable at lift height.
+        wp2 (mid-swing):    SLERP(grasp, drop, 0.5) — explicit halfway orientation that gives
+                            the IK solver a stable seed and prevents wrist flips across the
+                            large yaw change from grasp (yaw≈0°) to drop (yaw≈85°).
+        wp3 (above drop):   DROP_APPROACH orientation — reachable in the drop zone region.
+        wp4 (lower):        DROP_APPROACH orientation — same as wp3.
+
+        compute_cartesian_path SLERPs between consecutive waypoints; with an explicit
+        mid-swing point the per-segment yaw change is ~42° instead of ~85°, keeping
+        the IK solver in the same solution branch throughout.
+
+        Path:
+          current position (at grasp/lift height)
+            → raise to TRANSPORT_Z                  [grasp orientation]
+            → mid-swing (midpoint x/y, TRANSPORT_Z) [SLERP 50%]
+            → above DROP_APPROACH (TRANSPORT_Z)      [drop orientation]
+            → lower to DROP_APPROACH                 [drop orientation]
+        """
+        drop_orientation = self.make_pose_from_dict(cfg.DROP_APPROACH_POSE).orientation
+        mid_orientation  = self._slerp_orientation(grasp_orientation, drop_orientation, 0.5)
+
+        # Midpoint position between lift and drop approach (horizontal)
+        mid_x = (cfg.LIFT_POSE['x'] + cfg.DROP_APPROACH_POSE['x']) / 2.0
+        mid_y = (cfg.LIFT_POSE['y'] + cfg.DROP_APPROACH_POSE['y']) / 2.0
+
+        def _pose(x, y, z, orientation):
+            p = Pose()
+            p.position.x = float(x)
+            p.position.y = float(y)
+            p.position.z = float(z)
+            p.orientation = orientation
+            return p
+
+        return [
+            # 1. Raise straight up — hold exact grasp orientation
+            _pose(cfg.LIFT_POSE['x'], cfg.LIFT_POSE['y'], cfg.TRANSPORT_Z,
+                  grasp_orientation),
+            # 2. Mid-swing — explicit SLERP(50%) orientation prevents wrist flip
+            _pose(mid_x, mid_y, cfg.TRANSPORT_Z,
+                  mid_orientation),
+            # 3. Above drop approach — drop orientation
+            _pose(cfg.DROP_APPROACH_POSE['x'], cfg.DROP_APPROACH_POSE['y'], cfg.TRANSPORT_Z,
+                  drop_orientation),
+            # 4. Lower to drop approach height — hold drop orientation
+            _pose(cfg.DROP_APPROACH_POSE['x'], cfg.DROP_APPROACH_POSE['y'],
+                  cfg.DROP_APPROACH_POSE['z'], drop_orientation),
+        ]
+
+    def _check_pose_ik(self, pose, label=''):
+        """Return True if `pose` has a valid IK solution; log a clear error if not."""
+        req = GetPositionIK.Request()
+        req.ik_request.group_name = cfg.PLANNING_GROUP
+        req.ik_request.ik_link_name = self.ee_link
+        req.ik_request.avoid_collisions = True
+        req.ik_request.robot_state.is_diff = True
+        req.ik_request.timeout.sec = 1
+        ps = PoseStamped()
+        ps.header.frame_id = cfg.BASE_FRAME
+        ps.pose = pose
+        req.ik_request.pose_stamped = ps
+
+        self.ik_client.wait_for_service()
+        future = self.ik_client.call_async(req)
+        while not future.done():
+            time.sleep(0.01)
+
+        ok = future.result().error_code.val == MoveItErrorCodes.SUCCESS
+        p = pose.position
+        q = pose.orientation
+        status = 'OK' if ok else 'UNREACHABLE'
+        self.logger.info(
+            f'[IK {status}] {label}  '
+            f'pos=({p.x:.3f}, {p.y:.3f}, {p.z:.3f})  '
+            f'quat=({q.x:.3f}, {q.y:.3f}, {q.z:.3f}, {q.w:.3f})'
+        )
+        return ok
+
+    def move_upright_transport(self, waypoints, min_fraction=0.95):
+        """Execute the full Cartesian transport path through all waypoints.
+
+        Each waypoint carries its own orientation (grasp RPY → drop RPY),
+        so compute_cartesian_path SLERPs orientation smoothly — no sudden
+        EEF rotation during transport.
+
+        Pre-checks IK for every waypoint endpoint so failures point directly
+        to the arm_config.py value that needs adjustment.
+
+        Returns True on success, False on failure.
+        """
+        names = ['raise to TRANSPORT_Z', 'mid-swing', 'above DROP_APPROACH', 'lower to DROP_APPROACH']
+
+        # ── pre-flight IK check ────────────────────────────────────────
+        all_ok = True
+        for i, (wp, name) in enumerate(zip(waypoints, names)):
+            if not self._check_pose_ik(wp, f'wp{i+1} {name}'):
+                all_ok = False
+        if not all_ok:
+            self.logger.error(
+                'One or more transport waypoints are IK-unreachable — '
+                'calibrate TRANSPORT_Z / DROP_APPROACH_POSE in arm_config.py. '
+                'See [IK UNREACHABLE] lines above for the exact pose.'
+            )
+            return False
+
+        # ── plan Cartesian path ────────────────────────────────────────
+        self.logger.info('Planning Cartesian transport path...')
+        self.cartesian_path_client.wait_for_service()
+
+        req = GetCartesianPath.Request()
+        req.header.frame_id = cfg.BASE_FRAME
+        req.group_name = cfg.PLANNING_GROUP
+        req.link_name = self.ee_link
+        req.waypoints = waypoints
+        req.max_step = cfg.CARTESIAN_MAX_STEP
+        req.jump_threshold = cfg.CARTESIAN_JUMP_THRESHOLD
+        req.avoid_collisions = True
+        req.start_state.is_diff = True
+
+        future = self.cartesian_path_client.call_async(req)
+        while not future.done():
+            time.sleep(0.01)
+
+        result = future.result()
+        frac = result.fraction
+        self.logger.info(f'Cartesian transport path: {frac:.1%} planned')
+
+        if frac < min_fraction:
+            self.logger.error(
+                f'Cartesian transport only {frac:.1%} complete (need {min_fraction:.0%}). '
+                f'All waypoints passed IK but straight-line segments between them '
+                f'hit unreachable configurations. '
+                f'Try adjusting TRANSPORT_Z or adding an intermediate via-pose.'
+            )
+            return False
+
+        if cfg.VIZ_BEFORE_EXEC:
+            self._visualize_trajectory(result.solution)
+
+        return self._execute_trajectory(result.solution)
+
     # ── deterministic planner function ────────────────────────────────────────────────────
 
-    # def _call_plan_joint(self, joint_angles):
-    #     """Sends a list of 7 joint angles to the MoveIt Joint Planner."""
-    #     self.get_logger().info('Waiting for /xarm_joint_plan service...')
-    #     self.plan_joint.wait_for_service()
+    def _call_plan_joint(self, joint_angles):
+        """Sends a list of 7 joint angles to the MoveIt Joint Planner."""
+        self.logger.info('Waiting for /xarm_joint_plan service...')
+        self.plan_joint.wait_for_service()
         
-    #     req = PlanJoint.Request()
-    #     req.target = joint_angles
+        req = PlanJoint.Request()
+        req.target = joint_angles
         
-    #     # Send the request
-    #     future = self.plan_joint.call_async(req)
-    #     rclpy.spin_until_future_complete(self, future)
-        
-    #     if future.result() is not None and future.result().success:
-    #         self.get_logger().info('Joint plan successful!')
-    #         return True
-    #     else:
-    #         self.get_logger().error('Failed to generate joint plan.')
-    #         return False
+        future = self.plan_joint.call_async(req)
+        while not future.done():
+            time.sleep(0.05)
 
-    # def _call_plan_exec(self):
-    #     req = PlanExec.Request()
-    #     req.wait = True
-    #     future = self.plan_exec.call_async(req)
-    #     rclpy.spin_until_future_complete(self, future)
-    #     result = future.result()
-    #     if not result.success:
-    #         self.get_logger().error('PlanExec failed')
-    #         return False
-    #     return True
+        if future.result() is not None and future.result().success:
+            self.logger.info('Joint plan successful!')
+            return True
+        else:
+            self.logger.error('Failed to generate joint plan.')
+            return False
+
+    def _call_plan_exec(self):
+        req = PlanExec.Request()
+        req.wait = True
+        future = self.plan_exec.call_async(req)
+        while not future.done():
+            time.sleep(0.05)
+        result = future.result()
+        if not result.success:
+            self.logger.error('PlanExec failed')
+            return False
+        return True
