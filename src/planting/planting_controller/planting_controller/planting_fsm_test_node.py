@@ -23,8 +23,8 @@ class PlantingFsmTestNode(Node):
     def __init__(self):
         super().__init__('planting_fsm_test')
 
-        self._do_plant_pub     = self.create_publisher(Empty,  '/behavior/do_plant',  10)
-        self._seedling_pub     = self.create_publisher(Bool,   'seedling_dropped',    10)
+        self._do_plant_pub     = self.create_publisher(Empty,  '/behavior/do_planting',  10)
+        self._seedling_pub     = self.create_publisher(Bool,   '/behavior/seedling_dropped',    10)
 
         self.create_subscription(String, 'planting_state',    self._on_state,            10)
         self.create_subscription(String, '/linak_status',     self._on_linak_status,     10)
@@ -45,16 +45,16 @@ class PlantingFsmTestNode(Node):
 
     def send_do_plant(self):
         self._do_plant_pub.publish(Empty())
-        print('  → /behavior/do_plant  (Empty)')
+        print('  → /behavior/do_planting  (Empty)')
 
     def send_seedling_dropped(self):
         self._seedling_pub.publish(Bool(data=True))
-        print('  → seedling_dropped  True')
+        print('  → /behavior/seedling_dropped  True')
 
 
 def input_loop(node: PlantingFsmTestNode):
     print('Planting FSM tester ready.')
-    print('  p  — do_plant (start sequence)')
+    print('  p  — do_planting (start sequence)')
     print('  s  — seedling_dropped')
     print('  q  — quit')
     while rclpy.ok():

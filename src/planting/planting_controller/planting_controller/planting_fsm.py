@@ -80,8 +80,8 @@ class PlantingFsmNode(Node):
         self._chute_pos_pub  = self.create_publisher(Bool,   '/chute_in_position',  10)
 
         # ── Subscribers ───────────────────────────────────────────────────
-        self.create_subscription(Empty,  '/behavior/do_plant', self._on_do_planting,  10)
-        self.create_subscription(Bool,   'seedling_dropped', self._on_seedling,        10)
+        self.create_subscription(Empty,  '/behavior/do_planting', self._on_do_planting,  10)
+        self.create_subscription(Bool,   '/behavior/seedling_dropped', self._on_seedling,        10)
         self.create_subscription(String, '/arduino_status',  self._on_arduino_status,  10)
         self.create_subscription(String, '/linak_status',    self._on_linak_status,    10)
 
