@@ -168,12 +168,6 @@ class ManipulationPlannerNode(Node):
         if not self.planner._call_plan_exec():
             return False
         
-        # Step 6: move to drop
-        self.get_logger().info('Step 6: Moving to drop the seedling into chute')
-        if not self.planner._call_plan_joint(self.drop_joints):
-            return False
-        if not self.planner._call_plan_exec():
-            return False
 
         # wait for chute in position command before releasing seedling
         if self.sim_mode:
@@ -186,6 +180,13 @@ class ManipulationPlannerNode(Node):
                 time.sleep(0.5)
 
         # Step 7: release
+        # Step 6: move to drop
+        self.get_logger().info('Step 6: Moving to drop the seedling into chute')
+        if not self.planner._call_plan_joint(self.drop_joints):
+            return False
+        if not self.planner._call_plan_exec():
+            return False
+
         self.logger.info('Step 7: Releasing seedling...')
         if self.chute_in_position:
             self.logger.info('Chute is in position, proceeding to drop')
