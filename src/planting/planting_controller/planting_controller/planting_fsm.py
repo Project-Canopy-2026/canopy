@@ -59,20 +59,20 @@ class PlantingFsmNode(Node):
         super().__init__('planting_fsm')
 
         # ── OUTDOOR PARAMS ────────────────────────────────────────────────────
-        # self.declare_parameter('drilling_distance_cm', 30.0) # tbd
-        # self.declare_parameter('retract_distance_cm',  30.0) # tbd
-        # self.declare_parameter('drilling_dwell',       5.0) # tbd
-        # self.declare_parameter('chute_distance_cm',    30.0) # tbd
-        # self.declare_parameter('shift_distance_cm',    23.0) # measured
-        # self.declare_parameter('auger_rpm',            75)
-
-        # ── INDOOR PARAMS ────────────────────────────────────────────────────
-        self.declare_parameter('drilling_distance_cm', 12.0) # tbd
-        self.declare_parameter('retract_distance_cm',  12.0) # tbd
+        self.declare_parameter('drilling_distance_cm', 30.0) # tbd
+        self.declare_parameter('retract_distance_cm',  30.0) # tbd
         self.declare_parameter('drilling_dwell',       5.0) # tbd
-        self.declare_parameter('chute_distance_cm',    12.0) # tbd
+        self.declare_parameter('chute_distance_cm',    20.0) # tbd
         self.declare_parameter('shift_distance_cm',    23.0) # measured
         self.declare_parameter('auger_rpm',            75)
+
+        # ── INDOOR PARAMS ────────────────────────────────────────────────────
+        # self.declare_parameter('drilling_distance_cm', 12.0) # tbd
+        # self.declare_parameter('retract_distance_cm',  12.0) # tbd
+        # self.declare_parameter('drilling_dwell',       5.0) # tbd
+        # self.declare_parameter('chute_distance_cm',    12.0) # tbd
+        # self.declare_parameter('shift_distance_cm',    23.0) # measured
+        # self.declare_parameter('auger_rpm',            75)
         # ── Publishers ────────────────────────────────────────────────────
         self._arduino_pub    = self.create_publisher(String, '/arduino_cmd',        10)
         self._linak_pub      = self.create_publisher(String, '/linak_cmd',          10)
@@ -164,11 +164,13 @@ class PlantingFsmNode(Node):
 
     def _on_enter(self, state: State):
         LINAK_SPEED_CM_S = 2.18   # cm/s — used to convert distance → duration
-
+        LINAK_SPEED_CM_S = 1.09
         p         = self.get_parameter
         auger_rpm = p('auger_rpm').get_parameter_value().integer_value
 
         if state == State.LINAK_HOME:
+            # shift_mm = p('shift_distance_cm').get_parameter_value().double_value * 10.0
+            # self._arduino(f'stepper,right,{shift_mm:.1f}')
             self._linak('LINAK,1,IN_MAX')
             self._linak('LINAK,2,IN_MAX')
             self.get_logger().info('Waiting 5 s for LINAKs to home...')
@@ -181,6 +183,7 @@ class PlantingFsmNode(Node):
             self._enter(State.DRILLING_DOWN)        # immediate
 
         elif state == State.DRILLING_DOWN:
+            LINAK_SPEED_CM_S = 1.09
             dur = p('drilling_distance_cm').get_parameter_value().double_value / LINAK_SPEED_CM_S
             self._linak(f'LINAK,1,DOWN,{dur:.2f}')
             # advances on DONE:LINAK1
@@ -192,8 +195,9 @@ class PlantingFsmNode(Node):
                 self._dwell_timer = self.create_timer(dwell, self._dwell_done)
 
         elif state == State.AUGER_RETRACT:
+            LINAK_SPEED_CM_S = 2.18
             dur = p('retract_distance_cm').get_parameter_value().double_value / LINAK_SPEED_CM_S
-            self._arduino(f'bldc,out,{auger_rpm}')
+            self._arduino(f'bldc,in,{auger_rpm}')
             self._linak(f'LINAK,1,UP,{dur:.2f}')
             # advances on DONE:LINAK1
 
@@ -207,11 +211,13 @@ class PlantingFsmNode(Node):
             self.get_logger().info('Waiting for seedling_dropped...')
 
         elif state == State.CHUTE_DOWN:
+            LINAK_SPEED_CM_S = 2.18
             dur = p('chute_distance_cm').get_parameter_value().double_value / LINAK_SPEED_CM_S
             self._linak(f'LINAK,2,DOWN,{dur:.2f}')
             # advances on DONE:LINAK2
 
         elif state == State.CHUTE_RETRACT:
+            LINAK_SPEED_CM_S = 2.18
             dur = p('chute_distance_cm').get_parameter_value().double_value / LINAK_SPEED_CM_S
             self._linak(f'LINAK,2,UP,{dur:.2f}')
             # advances on DONE:LINAK2

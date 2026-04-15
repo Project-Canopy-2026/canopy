@@ -26,6 +26,7 @@ class PotDetector(Node):
 
         # ROS2 subscribers
         depth_camera_info = self.create_subscription(CameraInfo, '/camera/camera/aligned_depth_to_color/camera_info', self.depth_intrinsics_callback, 10)        
+        seedling_dropped_sub = self.create_subscription(Bool, '/behavior/seedling_dropped', self.seedling_dropped_callback, 10)
         enable_pot_detection = self.create_subscription(Bool, '/behavior/enable_pot_detection', self.pot_detection_callback, 10)
 
         rgb_sub = message_filters.Subscriber(self, Image, '/camera/camera/color/image_raw')
@@ -56,6 +57,14 @@ class PotDetector(Node):
 
         self.max_point_dist = 100 # pixels
         self.conf_threshold = 0.7
+
+
+    def seedling_dropped_callback(self, msg: Bool):
+        self.get_logger().info('Received seedling_dropped signal')
+        if msg.data:
+            self.get_logger().info('clearing detection history...')
+            self.center_x_window.clear()
+            self.center_y_window.clear()
 
 
     def image_callback(self, rgb_msg: Image, depth_msg: Image):
@@ -133,6 +142,16 @@ class PotDetector(Node):
         cls = int(boxes.cls[best_idx].cpu())
 
         self.get_logger().info(f'Got best detection after confidence threshold applied')
+
+        # visualize detection and stable center
+        vis_image = rgb_image.copy()
+        self.visualize(
+            vis_image,
+            boxes,
+            # stable_center_x=stable_center_x,
+            # stable_center_y=stable_center_y,
+            # stable_depth_center=stable_depth_center
+        )
 
         # Publish bounding box (as Int32MultiArray: [x1, y1, x2, y2, confidence])
         bbox_msg = Int32MultiArray()

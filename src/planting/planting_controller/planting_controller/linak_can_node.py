@@ -78,7 +78,7 @@ def _rpdo(code: int) -> list:
     return [
         code & 0xFF, (code >> 8) & 0xFF,
         0xFB,   # current  — default
-        0xCD,   # speed    — MAX
+        0x64,   # speed    — MAX
         0xFB,   # ramp up  — default
         0xFB,   # ramp dn  — default
         0x00, 0x00,
