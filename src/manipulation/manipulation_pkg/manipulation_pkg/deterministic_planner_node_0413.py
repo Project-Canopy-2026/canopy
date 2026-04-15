@@ -40,17 +40,18 @@ class ManipulationPlannerNode(Node):
         # self.lift_joints      = self.planner.deg_to_rad([-41.5, -12.8, -46.9, 19.6, -176.6,  62.0, -100.9])
         # self.drop_joints      = self.planner.deg_to_rad([-35.0, -25.0, 0.0, 75.0, -160.0,  -10.0, -110.0])
 
-        self.pre_grasp_joints = self.planner.deg_to_rad([-76.3, 23.0, -15.0, 25.2, -182.8, 82.3, -85.6])
+        # self.pre_grasp_joints = self.planner.deg_to_rad([-76.3, 23.0, -15.0, 25.2, -182.8, 82.3, -85.6])
         # self.grasp_joints = self.planner.deg_to_rad([-84.2, 31.8, -7.8, 41.8, -185.1, 73.7, -80.9])
         # self.post_grasp_joints = self.planner.deg_to_rad([-84.1, 25.9, -8.3, 40.3, -185.1, 73.7, -80.9])
         # self.lift_joints = self.planner.deg_to_rad([-17.4, 0.2, -71.6, 121.7, -184.2, -36.3, -85.6])
         # self.above_chute_joints = self.planner.deg_to_rad([19.2,-12.8, 31.3, 121.6, -175.5, -41, -85.6])
         # self.drop_joints = self.planner.deg_to_rad([24.4, -10.3, 37, 92.8, -174.7, -8.9, -89.1])
-
+        
+        self.pre_grasp_joints = self.planner.deg_to_rad([-76.3, 23.0, -15.0, 25.2, -182.8, 82.3, -85.6])
         self.grasp_joints = self.planner.deg_to_rad([-84.2, 31.8, -7.8, 41.8, -185.1, 73.7, -80.9])
         self.post_grasp_joints = self.planner.deg_to_rad([-84.1, 25.9, -8.3, 40.3, -185.1, 73.7, -80.9])
         self.lift_joints = self.planner.deg_to_rad([-17.4, 0.2, -71.6, 121.7, -184.2, -36.3, -85.6])
-        self.above_chute_joints = self.planner.deg_to_rad([19.2,-12.8, 31.3, 121.6, -175.5, -41, -85.6])
+        self.above_chute_joints = self.planner.deg_to_rad([-43.3, 25.1, 117.4, 116.1, -210.6, -35.2, -85.6])
         self.drop_joints = self.planner.deg_to_rad([-24.3, 43.3, 117.7, 86.4, -224.6, -13.4, -85.6])
 
         # sim_mode: auto-trigger pick-and-place and bypass chute_in_position wait
