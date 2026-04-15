@@ -1,18 +1,18 @@
 """
-pick_place.launch.py
+arm_bringup.launch.py
 
-MTC-based pick-and-place for xarm7.
+Full xarm7 bringup with MoveIt2 + MTC pick-and-place node.
 
-Starts the full xarm MoveIt stack manually (instead of via xarm7_planner_fake)
-so we can inject the `move_group/ExecuteTaskSolutionCapability` plugin into
-move_group.  Without it, MTC's task.execute() cannot find the
-`execute_task_solution` action server and fails with error 99999.
+Replaces the old planner_node / deterministic_planner_node with the
+MTC-based pick_and_place_node.  move_group is started with the
+move_group/ExecuteTaskSolutionCapability plugin so that MTC's
+task.execute() can reach the execute_task_solution action server.
 
 Usage (simulation / no hardware):
-  ros2 launch manipulation_mtc pick_place.launch.py sim_mode:=true
+  ros2 launch manipulation_mtc arm_bringup.launch.py sim_mode:=true
 
 Usage (real robot):
-  ros2 launch manipulation_mtc pick_place.launch.py
+  ros2 launch manipulation_mtc arm_bringup.launch.py
 """
 
 import os
@@ -23,12 +23,8 @@ from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription,
     OpaqueFunction,
-    RegisterEventHandler,
     TimerAction,
 )
-from launch.conditions import IfCondition, UnlessCondition
-from launch.event_handlers import OnProcessExit
-from launch.events import Shutdown
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
@@ -83,6 +79,7 @@ def launch_setup(context, *args, **kwargs):
     moveit_config = MoveItConfigsBuilder(
         context=context,
         controllers_name=controllers_name,
+        robot_ip=robot_ip,
         dof=7,
         robot_type="xarm",
         hw_ns="xarm",
@@ -136,19 +133,8 @@ def launch_setup(context, *args, **kwargs):
     )
 
     # ── Controller spawners ───────────────────────────────────────────────
-    # joint_state_broadcaster = Node(
-    #     package="controller_manager",
-    #     executable="spawner",
-    #     arguments=["joint_state_broadcaster", "--controller-manager", "/controller_manager"],
-    # )
-    # xarm7_controller = Node(
-    #     package="controller_manager",
-    #     executable="spawner",
-    #     arguments=["xarm7_traj_controller", "--controller-manager", "/controller_manager"],
-    # )
-
     joint_state_broadcaster = TimerAction(
-        period=5.0,
+        period=10.0,
         actions=[Node(
             package="controller_manager",
             executable="spawner",
@@ -157,16 +143,15 @@ def launch_setup(context, *args, **kwargs):
     )
 
     xarm7_controller = TimerAction(
-        period=6.0,
+        period=10.0,
         actions=[Node(
             package="controller_manager",
             executable="spawner",
             arguments=["xarm7_traj_controller", "--controller-manager", "/controller_manager"],
         )],
     )
+
     # ── RViz ─────────────────────────────────────────────────────────────
-    # Use moveit.rviz (shows robot + planning scene + motion planning panel).
-    # No TF remappings — keeping /tf global so RViz sees the robot.
     rviz_config = PathJoinSubstitution([
         FindPackageShare("xarm_moveit_config"), "rviz", "moveit.rviz"
     ])
@@ -201,7 +186,7 @@ def launch_setup(context, *args, **kwargs):
         parameters=[config, {"sim_mode": sim_mode}],
     )
 
-    # ── MTC pick-and-place node ───────────────────────────────────────────
+    # ── MTC pick-and-place node (replaces planner_node / deterministic_planner_node) ──
     # Both robot_description* params AND our own params are passed so that
     # task.loadRobotModel() finds the SRDF on this node directly.
     mtc_node = TimerAction(
@@ -226,6 +211,17 @@ def launch_setup(context, *args, **kwargs):
         ],
     )
 
+    # ── Perception node (optional, uncomment to enable) ───────────────────
+    perception_node = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory('pot_detector'),
+                'launch',
+                'pot_detection.launch.py'
+            )
+        )
+    )
+
     return [
         robot_description_launch,
         static_tf,
@@ -236,6 +232,7 @@ def launch_setup(context, *args, **kwargs):
         rviz_node,
         gripper_node,
         mtc_node,
+        perception_node,
     ]
 
 
@@ -248,7 +245,7 @@ def generate_launch_description():
         DeclareLaunchArgument("ee_link",   default_value="",
                               description="EEF link for IK (default: link_eef in sim, tool_tcp on real robot)"),
         DeclareLaunchArgument("sim_pot_x", default_value="0.0"),
-        DeclareLaunchArgument("sim_pot_y", default_value="-0.350"),
+        DeclareLaunchArgument("sim_pot_y", default_value="-0.9"),
         DeclareLaunchArgument("sim_pot_z", default_value="0.160"),
         OpaqueFunction(function=launch_setup),
     ])

@@ -670,24 +670,27 @@ class Planner:
 
     # ── deterministic planner function ────────────────────────────────────────────────────
 
-    def _call_plan_joint(self, joint_angles):
+    def _call_plan_joint(self, joint_angles, retries=3):
         """Sends a list of 7 joint angles to the MoveIt Joint Planner."""
         self.logger.info('Waiting for /xarm_joint_plan service...')
         self.plan_joint.wait_for_service()
-        
-        req = PlanJoint.Request()
-        req.target = joint_angles
-        
-        future = self.plan_joint.call_async(req)
-        while not future.done():
-            time.sleep(0.05)
 
-        if future.result() is not None and future.result().success:
-            self.logger.info('Joint plan successful!')
-            return True
-        else:
-            self.logger.error('Failed to generate joint plan.')
-            return False
+        for attempt in range(1, retries + 1):
+            req = PlanJoint.Request()
+            req.target = joint_angles
+
+            future = self.plan_joint.call_async(req)
+            while not future.done():
+                time.sleep(0.05)
+
+            if future.result() is not None and future.result().success:
+                self.logger.info('Joint plan successful!')
+                return True
+            else:
+                self.logger.warning(f'Joint plan attempt {attempt}/{retries} failed.')
+
+        self.logger.error('Failed to generate joint plan after all retries.')
+        return False
 
     def _call_plan_exec(self):
         req = PlanExec.Request()

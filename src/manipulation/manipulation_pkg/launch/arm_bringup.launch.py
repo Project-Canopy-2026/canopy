@@ -104,7 +104,7 @@ def generate_launch_description():
         #robot_state_publisher,
         xarm_launch,
         gripper_node,
-        planner_node,
-        # deterministic_planner_node,
+        # planner_node,
+        deterministic_planner_node,
         #perception_node,
     ])

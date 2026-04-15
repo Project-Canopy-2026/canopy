@@ -17,6 +17,7 @@ find_package(shape_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
+find_package(Eigen3 REQUIRED)
 
 add_executable(pick_and_place_node src/pick_and_place_node.cpp)
 
@@ -39,6 +40,7 @@ ament_target_dependencies(pick_and_place_node
   tf2_geometry_msgs
   tf2_ros
 )
+target_link_libraries(pick_and_place_node Eigen3::Eigen)
 
 install(TARGETS pick_and_place_node
   DESTINATION lib/${PROJECT_NAME})

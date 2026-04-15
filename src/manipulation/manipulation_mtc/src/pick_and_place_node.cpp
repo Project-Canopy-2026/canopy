@@ -30,6 +30,9 @@
 #include <moveit/task_constructor/solvers.h>
 #include <moveit/task_constructor/stages.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
+#include <Eigen/Geometry>
 
 #include <geometry_msgs/msg/point_stamped.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
@@ -62,34 +65,50 @@ static const std::vector<std::string> JOINT_NAMES = {
 
 // Pre-grasp joint positions [rad] ← arm_config.PRE_GRASP_JOINTS_DEG
 // = [-61.1, -3.7, -30.5, 2.0, -181.5, 84.7, -90.0] deg
-static const std::map<std::string, double> PRE_GRASP_JOINTS = {
-  {"joint1", -1.0664}, {"joint2", -0.0646}, {"joint3", -0.5323},
-  {"joint4",  0.0349}, {"joint5", -3.1679}, {"joint6",  1.4784}, {"joint7", -1.5708}
-};
-
+// static const std::map<std::string, double> PRE_GRASP_JOINTS = {
+//   {"joint1", -1.0664}, {"joint2", -0.0646}, {"joint3", -0.5323},
+//   {"joint4",  0.0349}, {"joint5", -3.1679}, {"joint6",  1.4784}, {"joint7", -1.5708}
+// };
 // Drop joint positions [rad] ← arm_config.DROP_JOINTS_DEG
 // = [-35, -25, 0, 75, -160, -10, -180] deg
+// static const std::map<std::string, double> DROP_JOINTS = {
+//   {"joint1", -0.6109}, {"joint2", -0.4363}, {"joint3",  0.0000},
+//   {"joint4",  1.3090}, {"joint5", -2.7925}, {"joint6", -0.1745}, {"joint7", -3.1416}
+// };
+static const std::map<std::string, double> PRE_GRASP_JOINTS = {
+  {"joint1", -1.3199}, {"joint2",  0.6109}, {"joint3", -0.0279},
+  {"joint4",  0.6807}, {"joint5", -2.8760}, {"joint6",  1.6423}, {"joint7", -1.5556}
+};
+static const std::map<std::string, double> LIFT_JOINTS = {
+  {"joint1", -1.2950}, {"joint2",  0.2583}, {"joint3",  0.0367},
+  {"joint4",  0.3822}, {"joint5", -2.8207}, {"joint6",  1.5304}, {"joint7", -1.5556}
+};
+static const std::map<std::string, double> ABOVE_CHUTE_JOINTS = {
+  {"joint1", -1.4785}, {"joint2", -0.1641}, {"joint3",  0.0401},
+  {"joint4",  1.3826}, {"joint5", -3.1504}, {"joint6",  0.1065}, {"joint7", -1.5708}
+};
 static const std::map<std::string, double> DROP_JOINTS = {
-  {"joint1", -0.6109}, {"joint2", -0.4363}, {"joint3",  0.0000},
-  {"joint4",  1.3090}, {"joint5", -2.7925}, {"joint6", -0.1745}, {"joint7", -3.1416}
+  {"joint1",  1.2185}, {"joint2", -0.3142}, {"joint3",  0.2618},
+  {"joint4",  1.4015}, {"joint5", -2.9845}, {"joint6", -0.2060}, {"joint7", -1.5708}
 };
 
+
 // Grasp orientation [rad] ← arm_config.GRASP_RPY = (89.7°, -90°, 0°)
-static constexpr double GRASP_ROLL  =  1.5655;  //  89.7 deg
-static constexpr double GRASP_PITCH = -1.5708;  // -90.0 deg
-static constexpr double GRASP_YAW   =  0.0;
+static constexpr double GRASP_ROLL  =  1.5655; //1.5655;  //  89.7 deg
+static constexpr double GRASP_PITCH =  0.0; //-1.5708;  // -90.0 deg
+static constexpr double GRASP_YAW   =  0;
 
 // Cartesian motion
 static constexpr double LIFT_HEIGHT     = 0.09;   // m — matches (LIFT_Z - GRASP_Z)
-static constexpr double APPROACH_MIN    = 0.05;   // m — min approach distance
+static constexpr double APPROACH_MIN    = 0.02;   // m — min approach distance
 static constexpr double APPROACH_MAX    = 0.15;   // m — max approach distance
-static constexpr double CARTESIAN_STEP  = 0.01;   // m — interpolation step size
+static constexpr double CARTESIAN_STEP  = 0.005;   // m — interpolation step size
 static constexpr double MAX_VEL         = 0.3;
 static constexpr double MAX_ACC         = 0.3;
 
 // Pot collision geometry
-static constexpr double POT_HEIGHT = 0.12;  // m (cylinder height)
-static constexpr double POT_RADIUS = 0.06;  // m (cylinder radius)
+static constexpr double POT_HEIGHT = 0.10;  // m (cylinder height)
+static constexpr double POT_RADIUS = 0.03;  // m (cylinder radius)
 
 // ── Node ─────────────────────────────────────────────────────────────────────
 
@@ -107,6 +126,9 @@ public:
 
     sim_mode_ = get_parameter("sim_mode").as_bool();
     ee_link_  = get_parameter("ee_link").as_string();
+
+    tf_buffer_   = std::make_shared<tf2_ros::Buffer>(get_clock());
+    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
     // Gripper service clients
     gripper_open_  = create_client<std_srvs::srv::Trigger>("/gripper/open");
@@ -240,9 +262,9 @@ private:
 
     std::vector<moveit_msgs::msg::CollisionObject> objects;
     // Floor slab (z centred on -0.025 so top face is at 0)
-    objects.push_back(makeBox("floor",             0.0,  0.0, -0.025, 3.0, 3.0, 0.05));
+    // objects.push_back(makeBox("floor",             0.0,  0.0, -0.025, 3.0, 3.0, 0.05));
     // Planting assembly column on the right side
-    objects.push_back(makeBox("planting_assembly", 0.45, 0.0,  0.20,  0.2, 1.0, 0.5));
+    // objects.push_back(makeBox("planting_assembly", 0.45, 0.0,  0.20,  0.2, 1.0, 0.5));
 
     psi.applyCollisionObjects(objects);
     std::this_thread::sleep_for(std::chrono::milliseconds(300));
@@ -327,10 +349,66 @@ private:
     ps.header.stamp    = now();
     ps.pose.position   = pot.point;
 
-    tf2::Quaternion q;
-    q.setRPY(GRASP_ROLL, GRASP_PITCH, GRASP_YAW);
-    q.normalize();
-    tf2::convert(q, ps.pose.orientation);
+    // Look up current EEF pose in base frame
+    geometry_msgs::msg::TransformStamped tf_stamped;
+    try {
+      tf_stamped = tf_buffer_->lookupTransform(
+        BASE_FRAME, ee_link_, tf2::TimePointZero);
+    } catch (const tf2::TransformException & e) {
+      RCLCPP_WARN(get_logger(),
+        "TF lookup failed, falling back to fixed RPY: %s", e.what());
+      tf2::Quaternion q;
+      q.setRPY(GRASP_ROLL, GRASP_PITCH, GRASP_YAW);
+      q.normalize();
+      tf2::convert(q, ps.pose.orientation);
+      return ps;
+    }
+
+    // Current EEF position and orientation
+    Eigen::Vector3d gripper_pos(
+      tf_stamped.transform.translation.x,
+      tf_stamped.transform.translation.y,
+      tf_stamped.transform.translation.z);
+
+    Eigen::Quaterniond q_current(
+      tf_stamped.transform.rotation.w,
+      tf_stamped.transform.rotation.x,
+      tf_stamped.transform.rotation.y,
+      tf_stamped.transform.rotation.z);
+    Eigen::Matrix3d current_R = q_current.toRotationMatrix();
+    Eigen::Vector3d y_ref = current_R.col(1);  // current EEF Y axis in base frame
+
+    // Pot position
+    Eigen::Vector3d pot_pos(pot.point.x, pot.point.y, pot.point.z);
+
+    // Approach axis: vector from gripper toward pot, normalized → EEF z
+    Eigen::Vector3d z_axis = (pot_pos - gripper_pos).normalized();
+
+    // Sideways axis: cross(y_ref, z_axis)
+    Eigen::Vector3d x_axis = y_ref.cross(z_axis);
+    if (x_axis.norm() < 1e-8) {
+      // y_ref is parallel to z_axis — fall back to current EEF X axis
+      x_axis = current_R.col(0).cross(z_axis);
+    }
+    x_axis.normalize();
+
+    // Remaining axis, then re-orthogonalize
+    Eigen::Vector3d y_axis = z_axis.cross(x_axis).normalized();
+    x_axis = y_axis.cross(z_axis).normalized();
+
+    Eigen::Matrix3d R;
+    R.col(0) = x_axis;
+    R.col(1) = y_axis;
+    R.col(2) = z_axis;
+
+    Eigen::Quaterniond q_grasp(R);
+    q_grasp.normalize();
+
+    ps.pose.orientation.x = q_grasp.x();
+    ps.pose.orientation.y = q_grasp.y();
+    ps.pose.orientation.z = q_grasp.z();
+    ps.pose.orientation.w = q_grasp.w();
+
     return ps;
   }
 
@@ -591,31 +669,31 @@ private:
     RCLCPP_INFO(get_logger(), "Step 4: Closing gripper...");
     if (!closeGripper()) return;
 
-    // ── Step 5: Wait for chute in position ────────────────────────────────
-    if (!sim_mode_) {
-      RCLCPP_INFO(get_logger(), "Step 5: Waiting for chute in position...");
-      while (rclcpp::ok() && !chute_in_position_) {
-        RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 2000,
-          "Waiting for /chute_in_position...");
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
-      }
-    } else {
-      RCLCPP_INFO(get_logger(), "Step 5: [SIM] Skipping chute wait.");
-    }
+    // // ── Step 5: Wait for chute in position ────────────────────────────────
+    // if (!sim_mode_) {
+    //   RCLCPP_INFO(get_logger(), "Step 5: Waiting for chute in position...");
+    //   while (rclcpp::ok() && !chute_in_position_) {
+    //     RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 2000,
+    //       "Waiting for /chute_in_position...");
+    //     std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    //   }
+    // } else {
+    //   RCLCPP_INFO(get_logger(), "Step 5: [SIM] Skipping chute wait.");
+    // }
 
-    // ── Step 6: Lift, transport, lower to drop (pot attached) ─────────────
-    RCLCPP_INFO(get_logger(), "Step 6: Lifting and transporting to drop zone...");
-    {
-      auto task = createLiftAndPlaceTask();
-      if (!executeTask(task, "lift_and_place")) return;
-    }
+    // // ── Step 6: Lift, transport, lower to drop (pot attached) ─────────────
+    // RCLCPP_INFO(get_logger(), "Step 6: Lifting and transporting to drop zone...");
+    // {
+    //   auto task = createLiftAndPlaceTask();
+    //   if (!executeTask(task, "lift_and_place")) return;
+    // }
 
-    // ── Step 7: Release seedling ──────────────────────────────────────────
-    RCLCPP_INFO(get_logger(), "Step 7: Opening gripper to release seedling...");
-    if (!openGripper()) {
-      RCLCPP_ERROR(get_logger(),
-        "Gripper open failed at drop — seedling may not have released");
-    }
+    // // ── Step 7: Release seedling ──────────────────────────────────────────
+    // RCLCPP_INFO(get_logger(), "Step 7: Opening gripper to release seedling...");
+    // if (!openGripper()) {
+    //   RCLCPP_ERROR(get_logger(),
+    //     "Gripper open failed at drop — seedling may not have released");
+    // }
 
     // ── Notify FSM ─────────────────────────────────────────────────────────
     std_msgs::msg::Bool dropped;
@@ -641,6 +719,9 @@ private:
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr detect_pub_;
 
   rclcpp::TimerBase::SharedPtr sim_timer_;
+
+  std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
+  std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 };
 
 // ── main ─────────────────────────────────────────────────────────────────────

@@ -98,7 +98,7 @@ class ManipulationPlanner(Node):
         # scene.world.collision_objects.append(
         #     self._make_box_object('rail_right', x=-0.30, y=-0.7, z=0.085, lx=1.40, ly=0.29, lz=0.17))
         scene.world.collision_objects.append(
-            self._make_box_object('planting_assembly', x=0.450, y= 0.0, z=0.2, lx=0.2, ly=1.0, lz=0.5))        
+            self._make_box_object('planting_assembly', x= 0.28, y= 0.33, z=0.28, lx=0.970, ly=0.13, lz=0.56))        
         # scene.world.collision_objects.append(
         #     self._make_box_object('pole',       x=0.24,  y=-0.24, z=0.60,  lx=0.06, ly=0.06, lz=1.20))
         for _ in range(5):
