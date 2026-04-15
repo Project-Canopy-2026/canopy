@@ -170,12 +170,13 @@ class PlantingFsmNode(Node):
 
         if state == State.LINAK_HOME:
             # shift_mm = p('shift_distance_cm').get_parameter_value().double_value * 10.0
-            # self._arduino(f'stepper,right,{shift_mm:.1f}')
+            # shift_mm = 130.0
+            # self._arduino(f'stepper,left,{shift_mm:.1f}')
             self._linak('LINAK,1,IN_MAX')
             self._linak('LINAK,2,IN_MAX')
             self.get_logger().info('Waiting 5 s for LINAKs to home...')
             with self._lock:
-                self._dwell_timer = self.create_timer(5.0, self._homing_done)
+                self._dwell_timer = self.create_timer(10.0, self._homing_done)
             # advances via _homing_done → AUGER_SPIN_UP
 
         elif state == State.AUGER_SPIN_UP:
@@ -195,7 +196,6 @@ class PlantingFsmNode(Node):
                 self._dwell_timer = self.create_timer(dwell, self._dwell_done)
 
         elif state == State.AUGER_RETRACT:
-            LINAK_SPEED_CM_S = 2.18
             dur = p('retract_distance_cm').get_parameter_value().double_value / LINAK_SPEED_CM_S
             self._arduino(f'bldc,in,{auger_rpm}')
             self._linak(f'LINAK,1,UP,{dur:.2f}')
@@ -211,13 +211,11 @@ class PlantingFsmNode(Node):
             self.get_logger().info('Waiting for seedling_dropped...')
 
         elif state == State.CHUTE_DOWN:
-            LINAK_SPEED_CM_S = 2.18
             dur = p('chute_distance_cm').get_parameter_value().double_value / LINAK_SPEED_CM_S
             self._linak(f'LINAK,2,DOWN,{dur:.2f}')
             # advances on DONE:LINAK2
 
         elif state == State.CHUTE_RETRACT:
-            LINAK_SPEED_CM_S = 2.18
             dur = p('chute_distance_cm').get_parameter_value().double_value / LINAK_SPEED_CM_S
             self._linak(f'LINAK,2,UP,{dur:.2f}')
             # advances on DONE:LINAK2
