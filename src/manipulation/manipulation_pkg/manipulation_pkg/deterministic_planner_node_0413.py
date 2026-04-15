@@ -51,7 +51,8 @@ class ManipulationPlannerNode(Node):
         self.grasp_joints = self.planner.deg_to_rad([-84.2, 31.8, -7.8, 41.8, -185.1, 73.7, -80.9])
         self.post_grasp_joints = self.planner.deg_to_rad([-84.1, 25.9, -8.3, 40.3, -185.1, 73.7, -80.9])
         self.lift_joints = self.planner.deg_to_rad([-17.4, 0.2, -71.6, 121.7, -184.2, -36.3, -85.6])
-        self.above_chute_joints = self.planner.deg_to_rad([-43.3, 25.1, 117.4, 116.1, -210.6, -35.2, -85.6])
+        self.intermediate_joints = self.planner.deg_to_rad([-41.3, 26.4, 78.6, 156.6, -223.2, -51, -87.5])
+        self.above_chute_joints = self.planner.deg_to_rad([19.7, 41.6, 111.3, 137.2, -233.3, -43.3, -95.6])
         self.drop_joints = self.planner.deg_to_rad([-24.3, 43.3, 117.7, 86.4, -224.6, -13.4, -85.6])
 
         # sim_mode: auto-trigger pick-and-place and bypass chute_in_position wait
@@ -155,6 +156,10 @@ class ManipulationPlannerNode(Node):
             return False
         if not self.planner._call_plan_exec():
             return False
+        if not self.planner._call_plan_joint(self.intermediate_joints):
+            return False
+        if not self.planner._call_plan_exec():
+            return False
         
         # Step 5-6: move above chute
         self.get_logger().info('Step 5-6: Moving above chute')
@@ -201,7 +206,10 @@ class ManipulationPlannerNode(Node):
             return False
         if not self.planner._call_plan_exec():
             return False
-        
+        if not self.planner._call_plan_joint(self.intermediate_joints):
+            return False
+        if not self.planner._call_plan_exec():
+            return False
         if not self.planner._call_plan_joint(self.lift_joints):
             return False
         if not self.planner._call_plan_exec():

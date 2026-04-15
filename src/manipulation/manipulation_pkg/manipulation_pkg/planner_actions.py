@@ -678,7 +678,7 @@ class Planner:
         for attempt in range(1, retries + 1):
             req = PlanJoint.Request()
             req.target = joint_angles
-
+            # req.velocity = 0.15 # Slower to speed. from 0.3 to 0.15
             future = self.plan_joint.call_async(req)
             while not future.done():
                 time.sleep(0.05)

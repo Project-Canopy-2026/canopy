@@ -23,7 +23,7 @@ serial_bridge = Node(
     output='screen',
     parameters=[{
         # 'port': '/dev/arduino',
-        'port': '/dev/ttyACM0',
+        'port': '/dev/ttyACM1',
         'baudrate': 115200
     }]
 )

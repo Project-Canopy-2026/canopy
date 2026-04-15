@@ -7,8 +7,8 @@ EEF_LINK       = 'link_eef'
 JOINT_NAMES    = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6', 'joint7']
 
 # ── planning parameters ────────────────────────────────────────────
-MAX_VELOCITY_SCALING     = 0.3
-MAX_ACCELERATION_SCALING = 0.3
+MAX_VELOCITY_SCALING     = 0.2
+MAX_ACCELERATION_SCALING = 0.2
 PLANNING_TIME            = 10.0
 NUM_PLANNING_ATTEMPTS    = 5
 PLAN_RETRIES             = 3
