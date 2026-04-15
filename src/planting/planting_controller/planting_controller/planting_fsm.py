@@ -164,6 +164,7 @@ class PlantingFsmNode(Node):
 
     def _on_enter(self, state: State):
         LINAK_SPEED_CM_S = 2.18   # cm/s — used to convert distance → duration
+        LINAK_SPEED_CM_S = 1.09 # for half linak speed at 0x64 
 
         p         = self.get_parameter
         auger_rpm = p('auger_rpm').get_parameter_value().integer_value
@@ -192,6 +193,7 @@ class PlantingFsmNode(Node):
                 self._dwell_timer = self.create_timer(dwell, self._dwell_done)
 
         elif state == State.AUGER_RETRACT:
+            LINAK_SPEED_CM_S = 2.18   # full speed Linak going CD for speed
             dur = p('retract_distance_cm').get_parameter_value().double_value / LINAK_SPEED_CM_S
             self._arduino(f'bldc,out,{auger_rpm}')
             self._linak(f'LINAK,1,UP,{dur:.2f}')
@@ -207,11 +209,13 @@ class PlantingFsmNode(Node):
             self.get_logger().info('Waiting for seedling_dropped...')
 
         elif state == State.CHUTE_DOWN:
+            LINAK_SPEED_CM_S = 2.18
             dur = p('chute_distance_cm').get_parameter_value().double_value / LINAK_SPEED_CM_S
             self._linak(f'LINAK,2,DOWN,{dur:.2f}')
             # advances on DONE:LINAK2
 
         elif state == State.CHUTE_RETRACT:
+            LINAK_SPEED_CM_S = 2.18
             dur = p('chute_distance_cm').get_parameter_value().double_value / LINAK_SPEED_CM_S
             self._linak(f'LINAK,2,UP,{dur:.2f}')
             # advances on DONE:LINAK2
