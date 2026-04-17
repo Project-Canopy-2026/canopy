@@ -219,7 +219,7 @@ class PotDetector(Node):
         #grasp_pose = calc_grasp_pose(center_3d_base)
 
         # publish pot center pose
-        self.pot_pose_pub.publish(center_3d_base)
+        self.pot_pose_pub.publish(center_3d_cam)
 
         self.get_logger().info('Published pot center point in arm base frame')
 

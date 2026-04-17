@@ -176,7 +176,7 @@ class PlantingFsmNode(Node):
             self._linak('LINAK,2,IN_MAX')
             self.get_logger().info('Waiting 5 s for LINAKs to home...')
             with self._lock:
-                self._dwell_timer = self.create_timer(10.0, self._homing_done)
+                self._dwell_timer = self.create_timer(5.0, self._homing_done)
             # advances via _homing_done → AUGER_SPIN_UP
 
         elif state == State.AUGER_SPIN_UP:
