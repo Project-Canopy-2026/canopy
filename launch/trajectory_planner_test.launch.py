@@ -37,6 +37,13 @@ def generate_launch_description():
         output="screen",
     )
 
+    free_occupancy_grid = Node(
+        package="costmaps",
+        executable="free_occupancy_grid_node",
+        name="free_occupancy_grid_node",
+        output="screen",
+    )
+
     fsm = Node(
         package="behavior",
         executable="fsm",
@@ -155,13 +162,17 @@ def generate_launch_description():
 
     return LaunchDescription([
         localization,
-        velodyne_static_tf,
-        velodyne_driver,
-        velodyne_pointcloud,
-        patchwork_ground_segmentation,
+        # LiDAR path disabled for GPS-only planner debugging. Re-enable
+        # velodyne_* and patchwork_ground_segmentation (and swap
+        # free_occupancy_grid back to occupancy_grid) to run with real sensor data.
+        # velodyne_static_tf,
+        # velodyne_driver,
+        # velodyne_pointcloud,
+        # patchwork_ground_segmentation,
+        # occupancy_grid,
         fsm,
         plan_manager,
-        occupancy_grid,
+        free_occupancy_grid,
         cost_map,
         trajectory_planner,
         #demo_waypoint_follower,

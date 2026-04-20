@@ -63,7 +63,7 @@ class PlannerNode(Node):
         self.create_subscription(
             PointStamped, "/planning/closest_seedling_bl", self.closestPointBlCb, 1
         )
-
+ 
         self.create_subscription(
             PlantingPlan, "/planning/remaining_plan", self.planCb, 1
         )
