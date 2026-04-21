@@ -52,8 +52,9 @@ class PlantingFsmNode(Node):
       chute_distance_cm     float  6.0   LINAK_2 down/up distance (cm)
       shift_distance_cm     float  5.0   stepper travel distance (cm) — speed locked at 270 RPM in firmware
       auger_rpm             int    75    BLDC RPM
-      (LINAK speed is per-move: drilling down uses SLOW=1.09 cm/s (0x64);
-       auger retract and chute down/up use FAST=2.18 cm/s (0xCD).)
+      LINAK moves are distance-based (cm); the CAN driver computes the target
+      count from live TPDO position. Per-move speed: drilling down SLOW
+      (1.09 cm/s, 0x64); auger retract and chute down/up FAST (2.18 cm/s, 0xCD).
     """
 
     def __init__(self):
@@ -164,11 +165,9 @@ class PlantingFsmNode(Node):
         self._on_enter(new_state)
 
     def _on_enter(self, state: State):
-        # LINAK hardware speeds. Each speed tag maps to an RPDO speed byte
-        # in linak_can_node (FAST=0xCD, SLOW=0x64). The cm/s constant must
-        # match the chosen tag so that distance → duration is correct.
-        LINAK_SPEED_FULL_CM_S = 2.18   # FAST — 0xCD
-        LINAK_SPEED_HALF_CM_S = 1.09   # SLOW — 0x64
+        # LINAK moves are now distance-based (cm). linak_can_node computes the
+        # target count from TPDO feedback and stops there. The FAST/SLOW tag
+        # only controls hardware travel speed (0xCD vs 0x64 RPDO speed byte).
 
         p         = self.get_parameter
         auger_rpm = p('auger_rpm').get_parameter_value().integer_value
@@ -187,8 +186,8 @@ class PlantingFsmNode(Node):
 
         elif state == State.DRILLING_DOWN:
             # Drill down slowly so the auger can bite into soil.
-            dur = p('drilling_distance_cm').get_parameter_value().double_value / LINAK_SPEED_HALF_CM_S
-            self._linak(f'LINAK,1,DOWN,{dur:.2f},SLOW')
+            dist = p('drilling_distance_cm').get_parameter_value().double_value
+            self._linak(f'LINAK,1,DOWN,{dist:.2f},SLOW')
             # advances on DONE:LINAK1
 
         elif state == State.DRILLING_DWELL:
@@ -199,9 +198,9 @@ class PlantingFsmNode(Node):
 
         elif state == State.AUGER_RETRACT:
             # Retract auger at full speed.
-            dur = p('retract_distance_cm').get_parameter_value().double_value / LINAK_SPEED_FULL_CM_S
+            dist = p('retract_distance_cm').get_parameter_value().double_value
             self._arduino(f'bldc,out,{auger_rpm}')
-            self._linak(f'LINAK,1,UP,{dur:.2f},FAST')
+            self._linak(f'LINAK,1,UP,{dist:.2f},FAST')
             # advances on DONE:LINAK1
 
         elif state == State.SHIFT_TO_CHUTE:
@@ -214,13 +213,13 @@ class PlantingFsmNode(Node):
             self.get_logger().info('Waiting for seedling_dropped...')
 
         elif state == State.CHUTE_DOWN:
-            dur = p('chute_distance_cm').get_parameter_value().double_value / LINAK_SPEED_FULL_CM_S
-            self._linak(f'LINAK,2,DOWN,{dur:.2f},FAST')
+            dist = p('chute_distance_cm').get_parameter_value().double_value
+            self._linak(f'LINAK,2,DOWN,{dist:.2f},FAST')
             # advances on DONE:LINAK2
 
         elif state == State.CHUTE_RETRACT:
-            dur = p('chute_distance_cm').get_parameter_value().double_value / LINAK_SPEED_FULL_CM_S
-            self._linak(f'LINAK,2,UP,{dur:.2f},FAST')
+            dist = p('chute_distance_cm').get_parameter_value().double_value
+            self._linak(f'LINAK,2,UP,{dist:.2f},FAST')
             # advances on DONE:LINAK2
 
         elif state == State.SHIFT_TO_AUGER:
