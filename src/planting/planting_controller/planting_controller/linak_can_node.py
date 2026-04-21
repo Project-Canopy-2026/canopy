@@ -7,8 +7,10 @@ Publishes  to  /linak_status  (std_msgs/String)
 
 Command protocol  (matches planting_fsm_outmax.py)
 ───────────────────────────────────────────────────
-  LINAK,<id>,DOWN,<duration_s>  — extend for <duration_s> s, then STOP
-  LINAK,<id>,UP,<duration_s>    — retract for <duration_s> s, then STOP
+  LINAK,<id>,DOWN,<duration_s>[,FAST|SLOW]  — extend for <duration_s> s, then STOP
+  LINAK,<id>,UP,<duration_s>[,FAST|SLOW]    — retract for <duration_s> s, then STOP
+      Speed tag: FAST = 2.18 cm/s (0xCD), SLOW = 1.09 cm/s (0x64).
+      Omitting the tag uses SLOW (preserves legacy slow-drilling default).
   LINAK,<id>,OUT_MAX            — drive to full extension; completion via TPDO
   LINAK,<id>,IN_MAX             — drive to full retraction; completion via TPDO
   LINAK,<id>,STOP               — stop immediately
@@ -68,19 +70,24 @@ CMD_CLEAR = 64256   # clear errors
 POS_OUT_MAX = 64255  # full extension
 POS_IN_MAX  = 150    # full retraction
 
+# Speed bytes for RPDO1 byte 3 (LINAK manual p.11)
+SPEED_FULL = 0xCD   # ~2.18 cm/s
+SPEED_HALF = 0x64   # ~1.09 cm/s
+SPEED_DEFAULT = SPEED_HALF   # used when no speed specified (preserves slow drilling)
+
 # How many consecutive stable TPDO samples (at ~250 ms each) before declaring done
 _STABLE_COUNT = 4    # ~1 second of no movement
 _POS_EPSILON  = 5    # position counts tolerance for "not moving"
 
 
-def _rpdo(code: int) -> list:
+def _rpdo(code: int, speed: int = SPEED_DEFAULT) -> list:
     """Build an 8-byte RPDO1 payload (LINAK manual p.11)."""
     return [
         code & 0xFF, (code >> 8) & 0xFF,
-        0xFB,   # current  — default
-        0xCD,   # speed    — MAX
-        0xFB,   # ramp up  — default
-        0xFB,   # ramp dn  — default
+        0xFB,            # current  — default
+        speed & 0xFF,    # speed byte (0xCD = MAX / 2.18 cm/s, 0x64 = HALF / 1.09 cm/s)
+        0xFB,            # ramp up  — default
+        0xFB,            # ramp dn  — default
         0x00, 0x00,
     ]
 
@@ -263,13 +270,14 @@ class ActuatorChannel:
         duration_s: float,
         on_done:    Callable,
         on_err:     Callable,
+        speed:      int = SPEED_DEFAULT,
     ) -> None:
         """Extend/retract for <duration_s> seconds, then STOP."""
         self._abort()
         self._cancel.clear()
         self._move_thread = threading.Thread(
             target=self._worker_timed,
-            args=(direction, duration_s, on_done, on_err),
+            args=(direction, duration_s, on_done, on_err, speed),
             daemon=True,
             name=f"linak{self.linak_id}_timed",
         )
@@ -312,8 +320,8 @@ class ActuatorChannel:
 
     # ── Internals ─────────────────────────────────────────────────────────
 
-    def _send(self, code: int) -> None:
-        self._network.send_message(self.cob_rpdo1, _rpdo(code))
+    def _send(self, code: int, speed: int = SPEED_DEFAULT) -> None:
+        self._network.send_message(self.cob_rpdo1, _rpdo(code, speed))
 
     def _abort(self) -> None:
         """Signal the worker to exit and join it (max 3 s)."""
@@ -328,9 +336,10 @@ class ActuatorChannel:
         duration_s: float,
         on_done:    Callable,
         on_err:     Callable,
+        speed:      int = SPEED_DEFAULT,
     ) -> None:
         try:
-            self._send(direction)
+            self._send(direction, speed)
             cancelled = self._cancel.wait(timeout=duration_s)
             self._send(CMD_STOP)
             if not cancelled:
@@ -608,7 +617,7 @@ class LinakDriver(Node):
             if len(parts) < 4:
                 self.get_logger().error(
                     f"'{action}' requires a duration. "
-                    f"Expected: LINAK,{lid},{action},<seconds>"
+                    f"Expected: LINAK,{lid},{action},<seconds>[,FAST|SLOW]"
                 )
                 return
             try:
@@ -617,9 +626,26 @@ class LinakDriver(Node):
                 self.get_logger().error(f"Invalid duration '{parts[3]}'")
                 return
 
+            # Optional 5th field: speed (FAST=0xCD, SLOW=0x64). Default = SLOW,
+            # preserving the pre-existing slow-drilling behaviour.
+            speed = SPEED_DEFAULT
+            if len(parts) >= 5 and parts[4]:
+                tag = parts[4].upper()
+                if tag == "FAST":
+                    speed = SPEED_FULL
+                elif tag == "SLOW":
+                    speed = SPEED_HALF
+                else:
+                    self.get_logger().error(
+                        f"Invalid speed tag '{parts[4]}' — expected FAST or SLOW"
+                    )
+                    return
+
             direction = CMD_OUT if action == "DOWN" else CMD_IN
             label     = "Extending" if action == "DOWN" else "Retracting"
-            self.get_logger().debug(f"[LINAK{lid}] {label} for {duration} s")
+            self.get_logger().debug(
+                f"[LINAK{lid}] {label} for {duration} s (speed=0x{speed:02X})"
+            )
             self._publish_status(f"ACK:LINAK{lid}")
 
             # FIX: capture lid by value in the lambda (was a closure bug)
@@ -628,6 +654,7 @@ class LinakDriver(Node):
                 duration_s = duration,
                 on_done    = lambda lid=lid: self._done(lid),
                 on_err     = lambda detail, lid=lid: self._err(lid, detail),
+                speed      = speed,
             )
 
         # ── Position-based moves ──────────────────────────────────────────
