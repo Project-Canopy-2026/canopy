@@ -61,20 +61,20 @@ class PlantingFsmNode(Node):
         super().__init__('planting_fsm')
 
         # ── OUTDOOR PARAMS ────────────────────────────────────────────────────
-        # self.declare_parameter('drilling_distance_cm', 30.0)
-        # self.declare_parameter('retract_distance_cm',  30.0)
-        # self.declare_parameter('drilling_dwell',       5.0) 
-        # self.declare_parameter('chute_distance_cm',    30.0)
-        # self.declare_parameter('shift_distance_cm',    23.0) # measured
-        # self.declare_parameter('auger_rpm',            75)
-
-        # ── INDOOR PARAMS ────────────────────────────────────────────────────
-        self.declare_parameter('drilling_distance_cm', 12.0) # tbd
-        self.declare_parameter('retract_distance_cm',  12.0) # tbd
-        self.declare_parameter('drilling_dwell',       5.0) # tbd
-        self.declare_parameter('chute_distance_cm',    12.0) # tbd
+        self.declare_parameter('drilling_distance_cm', 30.0)
+        self.declare_parameter('retract_distance_cm',  30.0)
+        self.declare_parameter('drilling_dwell',       5.0) 
+        self.declare_parameter('chute_distance_cm',    20.0)
         self.declare_parameter('shift_distance_cm',    23.0) # measured
         self.declare_parameter('auger_rpm',            75)
+
+        # ── INDOOR PARAMS ────────────────────────────────────────────────────
+        # self.declare_parameter('drilling_distance_cm', 12.0) # tbd
+        # self.declare_parameter('retract_distance_cm',  12.0) # tbd
+        # self.declare_parameter('drilling_dwell',       5.0) # tbd
+        # self.declare_parameter('chute_distance_cm',    12.0) # tbd
+        # self.declare_parameter('shift_distance_cm',    23.0) # measured
+        # self.declare_parameter('auger_rpm',            75)
         # ── Publishers ────────────────────────────────────────────────────
         self._arduino_pub    = self.create_publisher(String, '/arduino_cmd',        10)
         self._linak_pub      = self.create_publisher(String, '/linak_cmd',          10)
