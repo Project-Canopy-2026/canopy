@@ -7,6 +7,9 @@ import math
 from scipy.spatial.distance import pdist
 from scipy.spatial.transform.rotation import Rotation as R
 import utm
+from tf2_ros.buffer import Buffer
+from tf2_ros import TransformException
+from tf2_ros.transform_listener import TransformListener
 
 # ROS2 message definitions
 from diagnostic_msgs.msg import DiagnosticStatus
@@ -26,8 +29,8 @@ class CostMapNode(Node):
             PlantingPlan, "/planning/remaining_plan", self.planCb, 1
         )
         self.create_subscription(OccupancyGrid, "/cost/occupancy", self.occCb, 1)
-        self.create_subscription(Odometry, "/odometry/gps", self.gpsodomCb, 1)
-        self.create_subscription(Odometry, "/odometry/filtered", self.localodomCb, 1)
+        #self.create_subscription(Odometry, "/odometry/gps", self.gpsodomCb, 1)
+        #self.create_subscription(Odometry, "/odometry/filtered", self.localodomCb, 1)
         self.create_subscription(
             Empty, "/behavior/on_seedling_reached", self.onSeedlingReached, 1
         )
@@ -43,6 +46,9 @@ class CostMapNode(Node):
             Float32, "/planning/distance_to_seedling", 1
         )
         self.status_pub = self.create_publisher(DiagnosticStatus, "/diagnostics", 1)
+
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
 
         self.create_timer(0.1, self.updateCosts)
 
@@ -60,14 +66,14 @@ class CostMapNode(Node):
         self.cached_occ = arr
 
     # separated gps and local odomertry because ekf is not ready and there's no fully fused global odometry yet
-    def gpsodomCb(self, msg: Odometry):
-        pos = msg.pose.pose.position
-        self.ego_pos = (pos.x, pos.y)
+    # def gpsodomCb(self, msg: Odometry):
+    #     pos = msg.pose.pose.position
+    #     self.ego_pos = (pos.x, pos.y)
 
-    def localodomCb(self, msg: Odometry):
-        q = msg.pose.pose.orientation
-        r = R.from_quat([q.x, q.y, q.z, q.w])
-        self.ego_yaw = r.as_euler("xyz")[2]
+    # def localodomCb(self, msg: Odometry):
+    #     q = msg.pose.pose.orientation
+    #     r = R.from_quat([q.x, q.y, q.z, q.w])
+    #     self.ego_yaw = r.as_euler("xyz")[2]
 
     def latLonToMap(self, lat: float, lon: float):
         lat0, lon0, _ = self.get_parameter("map_origin_lat_lon_alt_degrees").value
@@ -83,12 +89,34 @@ class CostMapNode(Node):
     def getDistanceToSeedlingMap(self) -> np.ndarray:
         if self.seedling_points is None or len(self.seedling_points) < 1:
             return np.ones((100, 100)) * 100
-
-        if self.ego_pos is None or self.ego_yaw is None:
-            self.get_logger().warning(
-                "Could not get ego position from /odometry/gps yet."
-            )
+        
+        if self.seedling_points is None or len(self.seedling_points) < 1:
+            # self.get_logger().warning(
+            #     "Seedling LOCS not available. Skipping distance to seedling cost."
+            # )
             return np.ones((100, 100)) * 100
+
+        try:
+            bl_to_map_tf = self.tf_buffer.lookup_transform(
+                "map", "base_link", rclpy.time.Time()
+            )
+            ego_x = bl_to_map_tf.transform.translation.x
+            ego_y = bl_to_map_tf.transform.translation.y
+            self.ego_pos = (ego_x, ego_y)
+
+            q = bl_to_map_tf.transform.rotation
+            r = R.from_quat([q.x, q.y, q.z, q.w])
+            self.ego_yaw = r.as_euler("xyz")[2]
+
+        except TransformException as ex:
+            self.get_logger().warning(f"Could not get ego position: {ex}")
+            return np.ones((100, 100)) * 100
+
+        # if self.ego_pos is None or self.ego_yaw is None:
+        #     self.get_logger().warning(
+        #         "Could not get ego position from /odometry/gps yet."
+        #     )
+        #     return np.ones((100, 100)) * 100
 
         closest_distance = 99999.9
         closest_seedling = None

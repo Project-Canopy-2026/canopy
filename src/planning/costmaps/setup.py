@@ -20,6 +20,7 @@ setup(
     entry_points={
         "console_scripts": [
             f"occupancy_grid_node = {package_name}.occupancy_grid_node:main",
+            f"free_occupancy_grid_node = {package_name}.free_occupancy_grid_node:main",
             f"cost_map_node = {package_name}.cost_map_node:main",
         ],
     },

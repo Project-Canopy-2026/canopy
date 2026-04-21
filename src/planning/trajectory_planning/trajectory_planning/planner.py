@@ -27,7 +27,7 @@ from canopy_msgs.msg import (
     PlantingPlan,
 )
 from sensor_msgs.msg import PointCloud2
-from std_msgs.msg import String, Bool, Empty
+from std_msgs.msg import String, Bool, Empty, Float32
 
 
 class Candidate:
@@ -53,8 +53,9 @@ class PlannerNode(Node):
         self.create_subscription(
             GeoPoint, "/planning/goal_pose_geo", self.goalPointGeoCb, 1
         )
-        self.create_subscription(Odometry, "/odometry/gps", self.gpsodomCb, 1)
-        self.create_subscription(Odometry, "/odometry/filtered", self.localodomCb, 1)
+        #self.create_subscription(Odometry, "/odometry/gps", self.gpsodomCb, 1)
+        #self.create_subscription(Odometry, "/odometry/filtered", self.localodomCb, 1)
+        self.create_subscription(Float32, "/gnss/yaw", self.egoYawCb, 1)
         self.create_subscription(Mode, "/planning/current_mode", self.currentModeCb, 1)
         self.create_subscription(Bool, "/behavior/is_planting", self.isPlantingCb, 1)
         self.create_subscription(
@@ -120,16 +121,20 @@ class PlannerNode(Node):
         self.current_mode = msg.level
 
     # separated gps and local odomertry because ekf is not ready and there's no fully fused global odometry yet
-    def gpsodomCb(self, msg: Odometry):
-        pos = msg.pose.pose.position
-        self.ego_pos = (pos.x, pos.y)
+    # def gpsodomCb(self, msg: Odometry):
+    #     pos = msg.pose.pose.position
+    #     self.ego_pos = (pos.x, pos.y)
 
-    def localodomCb(self, msg: Odometry):
-        q = msg.pose.pose.orientation
-        r = R.from_quat([q.x, q.y, q.z, q.w])
-        self.ego_yaw = r.as_euler("xyz")[2]
+    # def localodomCb(self, msg: Odometry):
+    #     q = msg.pose.pose.orientation
+    #     r = R.from_quat([q.x, q.y, q.z, q.w])
+    #     self.ego_yaw = r.as_euler("xyz")[2]
 
-        self.ego_linear_vel = msg.twist.twist.linear.x
+    #     self.ego_linear_vel = msg.twist.twist.linear.x
+
+    def egoYawCb(self, msg: Float32):
+        # self.get_logger().info("Updated ego yaw")
+        self.ego_yaw = msg.data
 
     def goalPointGeoCb(self, msg: GeoPoint):
         self.goal_point = list(self.latLonToMap(msg.latitude, msg.longitude))
@@ -379,9 +384,16 @@ class PlannerNode(Node):
         return total_cost
 
     def latLonToMap(self, lat: float, lon: float):
-        x, y, _, __ = utm.from_latlon(lat, lon)
-        return (x - self._map_origin_utm_x, y - self._map_origin_utm_y)
+        lat0, lon0, _ = self.get_parameter("map_origin_lat_lon_alt_degrees").value
+        origin_x, origin_y, _, __ = utm.from_latlon(lat0, lon0)
 
+        x, y, _, __ = utm.from_latlon(lat, lon)
+
+        x = x - origin_x
+        y = y - origin_y
+
+        return (x, y)
+    
     def transformToBaselink(self, points):
 
         if len(points) < 1:
@@ -455,6 +467,7 @@ class PlannerNode(Node):
             pixel_coords[0] * self.grid_info.resolution
             + self.grid_info.origin.position.y
         )
+
         return [goal_x, goal_y]
 
     def planCb(self, msg: PlantingPlan):
@@ -465,10 +478,7 @@ class PlannerNode(Node):
         yaw_error = math.atan2(goal_point_bl[0], goal_point_bl[1]) - np.pi / 2
         yaw_error *= -1
 
-        if yaw_error < -np.pi:
-            yaw_error += 2 * np.pi
-        if yaw_error > np.pi:
-            yaw_error -= 2 * np.pi
+        yaw_error = (yaw_error + np.pi) % (2 * np.pi) - np.pi
         # print(f"{goal_point_bl} -> {yaw_error / np.pi * 180}")
 
         return yaw_error
@@ -658,14 +668,30 @@ class PlannerNode(Node):
             self.twist_pub.publish(self.getSmoothed(Twist()))
             return
 
-        if self.ego_yaw is None or self.ego_pos is None:
+        if self.ego_yaw is None: #or self.ego_pos is None:
             self.get_logger().warning("Could not plan trajectory. Ego pose unavailable.")
             self.twist_pub.publish(self.getSmoothed(Twist()))
             return
-
+        
         if self.remaining_seedling_count < 1:
             self.publishStatus("No remaining seedlings in plan.")
             self.twist_pub.publish(self.getSmoothed(Twist()))
+            return
+        
+        try:
+            bl_to_map_tf = self.tf_buffer.lookup_transform(
+                "map", "base_link", rclpy.time.Time()
+            )
+            ego_x = bl_to_map_tf.transform.translation.x
+            ego_y = bl_to_map_tf.transform.translation.y
+            self.ego_pos = (ego_x, ego_y)
+
+            q = bl_to_map_tf.transform.rotation
+            r = R.from_quat([q.x, q.y, q.z, q.w])
+            self.ego_yaw = r.as_euler("xyz")[2]
+
+        except TransformException as ex:
+            self.get_logger().warning(f"Could not get ego position: {ex}")
             return
 
         if self.closest_point_bl is None:
@@ -676,6 +702,8 @@ class PlannerNode(Node):
             return
 
         goal_point = self.closest_point_bl
+        self.get_logger().info(f"goal point: {goal_point}")
+
         yaw_error = self.getYawError(goal_point)
 
         POINT_TURN_YAW_ERROR_THRESHOLD = np.pi / 8
@@ -744,8 +772,8 @@ class PlannerNode(Node):
             [40.44132949798969, -79.94451105594635, 293.0],
         )
 # [40.4431653, -79.9402844, 288.0961589] # steward
-        lat0, lon0, _ = self.get_parameter("map_origin_lat_lon_alt_degrees").value
-        self._map_origin_utm_x, self._map_origin_utm_y, _, __ = utm.from_latlon(lat0, lon0)
+        #lat0, lon0, _ = self.get_parameter("map_origin_lat_lon_alt_degrees").value
+        #self._map_origin_utm_x, self._map_origin_utm_y, _, __ = utm.from_latlon(lat0, lon0)
 
 
 def main(args=None):

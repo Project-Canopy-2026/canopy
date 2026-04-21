@@ -9,6 +9,9 @@ from std_msgs.msg import Float32, Empty
 from canopy_msgs.msg import PlantingPlan, Seedling
 from nav_msgs.msg import Odometry
 
+from tf2_ros.buffer import Buffer
+from tf2_ros import TransformException
+from tf2_ros.transform_listener import TransformListener
 
 class PlanManager(Node):
     def __init__(self):
@@ -24,7 +27,7 @@ class PlanManager(Node):
         self.create_subscription(
             Float32, "/planning/distance_to_seedling", self.seedlingDistanceCb, 1
         )
-        self.create_subscription(Odometry, "/odometry/gps", self.odomCb, 1)
+        #self.create_subscription(Odometry, "/odometry/gps", self.odomCb, 1)
 
         self.remaining_plan_pub = self.create_publisher(
             PlantingPlan, "/planning/remaining_plan", 1
@@ -34,15 +37,18 @@ class PlanManager(Node):
         )
         self.status_pub = self.create_publisher(DiagnosticStatus, "/diagnostics", 1)
 
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+
         self.original_seedlings = []
         self.remaining_seedlings = []
         self.remaining_seedling_points = []
         self.bounds_geojson = ""
         self.ego_pos = None
 
-    def odomCb(self, msg: Odometry):
-        pos = msg.pose.pose.position
-        self.ego_pos = [pos.x, pos.y]
+    # def odomCb(self, msg: Odometry):
+    #     pos = msg.pose.pose.position
+    #     self.ego_pos = [pos.x, pos.y]
 
     def completePlanCb(self, msg: PlantingPlan):
         self.get_logger().info(f"Got complete plan with {len(msg.seedlings)} seedlings")
@@ -79,8 +85,20 @@ class PlanManager(Node):
     def seedlingDistanceCb(self, msg: Float32):
         closest_distance = msg.data
 
+        try:
+            bl_to_map_tf = self.tf_buffer.lookup_transform(
+                "map", "base_link", rclpy.time.Time()
+            )
+            ego_x = bl_to_map_tf.transform.translation.x
+            ego_y = bl_to_map_tf.transform.translation.y
+            self.ego_pos = [ego_x, ego_y]
+
+        except TransformException as ex:
+            print(f"Could not get transform: {ex}")
+            return
+
         if self.ego_pos is None:
-            self.get_logger().warning("Ego pose unavailable from /odometry/gps.")
+            self.get_logger().warning("Ego pose unavailable")
             return
 
         seedling_reached_distance = (
@@ -88,8 +106,9 @@ class PlanManager(Node):
             .get_parameter_value()
             .double_value
         )
-
+ 
         if closest_distance > seedling_reached_distance:
+            print(f"Still {closest_distance - seedling_reached_distance} m away")
             return
 
         if len(self.remaining_seedling_points) < 1 or len(self.remaining_seedlings) < 1:

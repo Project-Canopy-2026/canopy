@@ -13,12 +13,12 @@ ekf_filter_node_map:
     debug: true
     debug_out_file: /tmp/ekf_debug.txt
 
-    map_frame: map_gps
+    map_frame: map
     odom_frame: odom
     base_link_frame: base_link
-    world_frame: map_gps
+    world_frame: map
 
-    use_sim_time: false # only for testing with gnss rosbag
+    use_sim_time: true # true only for testing with gnss rosbag
 
     # config vector format
     #[X, Y, Z, 

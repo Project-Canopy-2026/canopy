@@ -72,9 +72,8 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        gnss_bringup,
-        #gps_static_tf, # for debug only!
-        navsat_transform,
+        #gnss_bringup,
+        #navsat_transform,
         #global_ekf_filter
     ])
 
