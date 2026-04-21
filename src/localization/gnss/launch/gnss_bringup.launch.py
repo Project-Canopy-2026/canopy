@@ -49,24 +49,22 @@ def generate_launch_description():
     )
 
     odom_to_base_tf_publisher = Node(
-        package='gnss', 
-        executable='odom_to_base_tf_publisher', 
+        package='gnss',
+        executable='odom_to_base_tf_publisher',
         name='odom_to_base_tf_publisher',
         output='screen',
-        parameters=[{"use_sim_time": True}],
     )
 
     gnss_interface = Node(
-        package='gnss', 
-        executable='gnss_interface', 
+        package='gnss',
+        executable='gnss_interface',
         name='gnss_interface',
         output='screen',
-        parameters=[{"use_sim_time": True}],
     )
 
     return LaunchDescription([
-        #rtk_corrections,
-        #swiftnav_gnss_driver,
+        rtk_corrections,
+        swiftnav_gnss_driver,
         gps_static_tf,
         #odom_to_base_tf_publisher,
         gnss_interface,

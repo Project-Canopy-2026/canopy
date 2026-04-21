@@ -102,8 +102,8 @@ class PlannerNode(Node):
 
         self.previous_twist = Twist()
 
-        # self.create_timer(0.1, self.updateTrajectorySimply)
-        self.create_timer(0.1, self.updateTrajectory)
+        self.create_timer(0.1, self.updateTrajectorySimply)
+        # self.create_timer(0.1, self.updateTrajectory)
 
     def closestPointBlCb(self, msg: PointStamped):
         self.closest_point_bl = [msg.point.x, msg.point.y]
