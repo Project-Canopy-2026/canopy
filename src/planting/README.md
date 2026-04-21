@@ -1,3 +1,36 @@
+# Pre Demo Prep
+## 1. Power on everything: release e stop, 3 amiga bike battery
+## 2. CAN
+```bash
+sudo ip link set can1 down
+sudo ip link set can1 up type can bitrate 125000
+```
+## 3. Arduino Port
+```bash
+ls /dev/ttyACM*
+```
+## 4. Check Parameters in planting_fsm.py
+- planting params
+- arduino port ACM0 or ACM1
+- check there is not horizontal movement in HOME state
+## 5. SEND IT
+### First Terminal
+```bash
+colcon build it
+source install/setup.bash
+ros2 launch <full path to the canopy_bringup.launch.py>
+```
+### Second Terminal
+```bash
+cd dev/ros2_ws/src/canopy
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+ros2 run planting_controller planting_fsm_test
+```
+
+send p when you see arduino and linka ready and then planner ready on arm side
+
+
 # Planting Stack
 
 

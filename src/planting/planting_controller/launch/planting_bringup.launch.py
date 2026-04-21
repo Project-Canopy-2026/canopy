@@ -8,7 +8,6 @@ from launch.events.process import ProcessIO
 
 def on_output(event: ProcessIO, trigger_str: str, actions):
     text = event.text.decode(errors='ignore')
-    print(f'[LAUNCH DEBUG] from_stdout={event.from_stdout} from_stderr={event.from_stderr} text={repr(text[:80])}')
     if trigger_str in text:
         return actions
     return []
