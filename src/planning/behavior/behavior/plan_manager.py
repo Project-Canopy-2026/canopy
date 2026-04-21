@@ -46,6 +46,8 @@ class PlanManager(Node):
         self.bounds_geojson = ""
         self.ego_pos = None
 
+        self.seedling_reached_distance = 0.8
+
     # def odomCb(self, msg: Odometry):
     #     pos = msg.pose.pose.position
     #     self.ego_pos = [pos.x, pos.y]
@@ -85,60 +87,56 @@ class PlanManager(Node):
     def seedlingDistanceCb(self, msg: Float32):
         closest_distance = msg.data
 
-        # try:
-        #     bl_to_map_tf = self.tf_buffer.lookup_transform(
-        #         "map", "base_link", rclpy.time.Time()
-        #     )
-        #     ego_x = bl_to_map_tf.transform.translation.x
-        #     ego_y = bl_to_map_tf.transform.translation.y
-        #     self.ego_pos = [ego_x, ego_y]
+        try:
+            bl_to_map_tf = self.tf_buffer.lookup_transform(
+                "map", "base_link", rclpy.time.Time()
+            )
+            ego_x = bl_to_map_tf.transform.translation.x
+            ego_y = bl_to_map_tf.transform.translation.y
+            self.ego_pos = [ego_x, ego_y]
 
-        # except TransformException as ex:
-        #     print(f"Could not get transform: {ex}")
-        #     return
-
-        # if self.ego_pos is None:
-        #     self.get_logger().warning("Ego pose unavailable")
-        #     return
-
-        seedling_reached_distance = (
-            self.get_parameter("seedling_reached_distance")
-            .get_parameter_value()
-            .double_value
-        )
-
-        if closest_distance > seedling_reached_distance:
-            self.get_logger().info(f"Still {closest_distance:.2f} m away", throttle_duration_sec=1.0)
+        except TransformException as ex:
+            print(f"Could not get transform: {ex}")
             return
-        
-        if closest_distance < seedling_reached_distance:
-            self.get_logger().info("SEEEEEEDDDDLING REAAAAAAAACHEDDD")
+
+        if self.ego_pos is None:
+            self.get_logger().warning("Ego pose unavailable")
+            return
+
+        # seedling_reached_distance = (
+        #     self.get_parameter("seedling_reached_distance")
+        #     .get_parameter_value()
+        #     .double_value
+        # )
+
+        if closest_distance > self.seedling_reached_distance:
+            self.get_logger().info(f"Still {closest_distance:.2f} m away", throttle_duration_sec=1.0)
             return
         
         if len(self.remaining_seedlings) < 1:
             self.get_logger().warning("No remaining seedlings in plan.")
             return
 
-        # nearest_distance = 999999.9
-        # closest_seedling_idx = -1
-        # for idx, point in enumerate(self.remaining_seedling_points):
-        #     dist = pdist([point, self.ego_pos])[0]
+        nearest_distance = 999999.9
+        closest_seedling_idx = -1
+        for idx, point in enumerate(self.remaining_seedling_points):
+            dist = pdist([point, self.ego_pos])[0]
 
-        #     if dist < nearest_distance:
-        #         nearest_distance = dist
-        #         closest_seedling_idx = idx
+            if dist < nearest_distance:
+                nearest_distance = dist
+                closest_seedling_idx = idx
 
-        # if closest_seedling_idx < 0:
-        #     self.get_logger().warning("Could not identify closest remaining seedling.")
-        #     return
+        if closest_seedling_idx < 0:
+            self.get_logger().warning("seedling_reached_distance =Could not identify closest remaining seedling.")
+            return
 
-        # del self.remaining_seedling_points[closest_seedling_idx]
-        # del self.remaining_seedlings[closest_seedling_idx]
+        del self.remaining_seedling_points[closest_seedling_idx]
+        del self.remaining_seedlings[closest_seedling_idx]
 
-        # assert len(self.remaining_seedling_points) == len(self.remaining_seedlings)
+        assert len(self.remaining_seedling_points) == len(self.remaining_seedlings)
 
-        del self.remaining_seedlings[0]
-        del self.remaining_seedling_points[0]
+        # del self.remaining_seedlings[0]
+        # del self.remaining_seedling_points[0]
 
         self.get_logger().info("SEEDLING REACHED")
         self.publishRemainingPlan()
@@ -152,11 +150,11 @@ class PlanManager(Node):
             [40.44132949798969, -79.94451105594635, 293.0],
         )
 
-        param_desc.type = ParameterType.PARAMETER_DOUBLE
-        self.declare_parameter(
-            "seedling_reached_distance",
-            2, #0.8,
-        )
+        # param_desc.type = ParameterType.PARAMETER_DOUBLE
+        # self.declare_parameter(
+        #     "seedling_reached_distance",
+        #     2, #0.8,
+        # )
 
 
 def main(args=None):

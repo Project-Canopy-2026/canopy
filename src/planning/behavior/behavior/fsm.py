@@ -67,7 +67,7 @@ class FsmNode(Node):
 
         self.create_timer(0.1, self.publishCurrentMode)
         # self.seedling_reached_distance = 1.0  # meters
-        self.seedling_reached_distance = 2.0  # meters
+        self.seedling_reached_distance = 0.8  # meters
         self.is_planting = False
         self.is_turning_downhill = False
         self.PLANTING_DURATION = 10  # seconds
