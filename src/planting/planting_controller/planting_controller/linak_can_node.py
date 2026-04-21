@@ -458,7 +458,7 @@ class LinakDriver(Node):
         super().__init__("linak_can_node")
 
         # ── Parameters ────────────────────────────────────────────────────
-        self.declare_parameter("can_channel",         "can0")
+        self.declare_parameter("can_channel",         "can1")
         self.declare_parameter("can_bitrate",         125000)
         self.declare_parameter("node_id_1",           0x20)
         self.declare_parameter("node_id_2",           0x21)
