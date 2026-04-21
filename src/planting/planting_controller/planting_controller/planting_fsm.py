@@ -17,8 +17,8 @@ class State(enum.Enum):
     DRILLING_DOWN   = 'DRILLING_DOWN'   # linak runs out to max position 64255[transition: DONE:LINAK1]
     DRILLING_DWELL  = 'DRILLING_DWELL'  # bldc continuous spin [transition: 10s timer]
     AUGER_RETRACT   = 'AUGER_RETRACT'   # bldc spins other way, linak runs in to max position 150 [transition: DONE:LINAK1]
-    SHIFT_TO_CHUTE  = 'SHIFT_TO_CHUTE'  # bldc stops, stepper starts [transition: DONE:STEPPER]
-    WAIT_SEEDLING   = 'WAIT_SEEDLING'   # wait for seedling_dropped topic
+    SHIFT_TO_CHUTE  = 'SHIFT_TO_CHUTE'  # bldc stops, stepper moves shift_distance_cm [transition: DONE:STEPPER → publish /chute_in_position]
+    WAIT_SEEDLING   = 'WAIT_SEEDLING'   # wait for seedling_dropped topic [transition: seedling_dropped]
     CHUTE_DOWN      = 'CHUTE_DOWN'      # linak_2 down [transition: DONE:LINAK2]
     CHUTE_RETRACT   = 'CHUTE_RETRACT'   # linak_2 up [transition: DONE:LINAK2]
     SHIFT_TO_AUGER  = 'SHIFT_TO_AUGER'  # stepper returns [transition: DONE:STEPPER]
@@ -52,28 +52,37 @@ class PlantingFsmNode(Node):
       chute_distance_cm     float  6.0   LINAK_2 down/up distance (cm)
       shift_distance_cm     float  5.0   stepper travel distance (cm) — speed locked at 270 RPM in firmware
       auger_rpm             int    75    BLDC RPM
-      (LINAK speed assumed constant at 2.18 cm/s — duration = distance / 2.18)
+      (LINAK speed is per-move: drilling down uses SLOW=1.09 cm/s (0x64);
+       auger retract and chute down/up use FAST=2.18 cm/s (0xCD).)
     """
 
     def __init__(self):
         super().__init__('planting_fsm')
 
-        # ── Parameters ────────────────────────────────────────────────────
-        self.declare_parameter('drilling_distance_cm', 30.0) # tbd
-        self.declare_parameter('retract_distance_cm',  30.0) # tbd
-        self.declare_parameter('drilling_dwell',       5.0) # tbd
-        self.declare_parameter('chute_distance_cm',    30.0) # tbd
+        # ── OUTDOOR PARAMS ────────────────────────────────────────────────────
+        self.declare_parameter('drilling_distance_cm', 30.0)
+        self.declare_parameter('retract_distance_cm',  30.0)
+        self.declare_parameter('drilling_dwell',       5.0) 
+        self.declare_parameter('chute_distance_cm',    20.0)
         self.declare_parameter('shift_distance_cm',    23.0) # measured
         self.declare_parameter('auger_rpm',            75)
 
+        # ── INDOOR PARAMS ────────────────────────────────────────────────────
+        # self.declare_parameter('drilling_distance_cm', 12.0) # tbd
+        # self.declare_parameter('retract_distance_cm',  12.0) # tbd
+        # self.declare_parameter('drilling_dwell',       5.0) # tbd
+        # self.declare_parameter('chute_distance_cm',    12.0) # tbd
+        # self.declare_parameter('shift_distance_cm',    23.0) # measured
+        # self.declare_parameter('auger_rpm',            75)
         # ── Publishers ────────────────────────────────────────────────────
-        self._arduino_pub = self.create_publisher(String, '/arduino_cmd',   10)
-        self._linak_pub   = self.create_publisher(String, '/linak_cmd',     10)
-        self._state_pub   = self.create_publisher(String, 'planting_state', 10)
+        self._arduino_pub    = self.create_publisher(String, '/arduino_cmd',        10)
+        self._linak_pub      = self.create_publisher(String, '/linak_cmd',          10)
+        self._state_pub      = self.create_publisher(String, 'planting_state',      10)
+        self._chute_pos_pub  = self.create_publisher(Bool,   '/chute_in_position',  10)
 
         # ── Subscribers ───────────────────────────────────────────────────
-        self.create_subscription(Empty,  '/behavior/do_plant', self._on_do_planting,  10)
-        self.create_subscription(Bool,   'seedling_dropped', self._on_seedling,        10)
+        self.create_subscription(Empty,  '/behavior/do_planting', self._on_do_planting,  10)
+        self.create_subscription(Bool,   '/behavior/seedling_dropped', self._on_seedling,        10)
         self.create_subscription(String, '/arduino_status',  self._on_arduino_status,  10)
         self.create_subscription(String, '/linak_status',    self._on_linak_status,    10)
 
@@ -110,6 +119,8 @@ class PlantingFsmNode(Node):
 
         if token == 'DONE:STEPPER':
             if state == State.SHIFT_TO_CHUTE:
+                self._chute_pos_pub.publish(Bool(data=True))
+                self.get_logger().info('→ /chute_in_position: True')
                 self._enter(State.WAIT_SEEDLING)
             elif state == State.SHIFT_TO_AUGER:
                 self._enter(State.COMPLETE)
@@ -153,7 +164,11 @@ class PlantingFsmNode(Node):
         self._on_enter(new_state)
 
     def _on_enter(self, state: State):
-        LINAK_SPEED_CM_S = 2.18   # cm/s — used to convert distance → duration
+        # LINAK hardware speeds. Each speed tag maps to an RPDO speed byte
+        # in linak_can_node (FAST=0xCD, SLOW=0x64). The cm/s constant must
+        # match the chosen tag so that distance → duration is correct.
+        LINAK_SPEED_FULL_CM_S = 2.18   # FAST — 0xCD
+        LINAK_SPEED_HALF_CM_S = 1.09   # SLOW — 0x64
 
         p         = self.get_parameter
         auger_rpm = p('auger_rpm').get_parameter_value().integer_value
@@ -171,8 +186,9 @@ class PlantingFsmNode(Node):
             self._enter(State.DRILLING_DOWN)        # immediate
 
         elif state == State.DRILLING_DOWN:
-            dur = p('drilling_distance_cm').get_parameter_value().double_value / LINAK_SPEED_CM_S
-            self._linak(f'LINAK,1,DOWN,{dur:.2f}')
+            # Drill down slowly so the auger can bite into soil.
+            dur = p('drilling_distance_cm').get_parameter_value().double_value / LINAK_SPEED_HALF_CM_S
+            self._linak(f'LINAK,1,DOWN,{dur:.2f},SLOW')
             # advances on DONE:LINAK1
 
         elif state == State.DRILLING_DWELL:
@@ -182,28 +198,29 @@ class PlantingFsmNode(Node):
                 self._dwell_timer = self.create_timer(dwell, self._dwell_done)
 
         elif state == State.AUGER_RETRACT:
-            dur = p('retract_distance_cm').get_parameter_value().double_value / LINAK_SPEED_CM_S
-            self._arduino(f'bldc,out,{auger_rpm}')
-            self._linak(f'LINAK,1,UP,{dur:.2f}')
+            # Retract auger at full speed.
+            dur = p('retract_distance_cm').get_parameter_value().double_value / LINAK_SPEED_FULL_CM_S
+            self._arduino(f'bldc,in,{auger_rpm}')
+            self._linak(f'LINAK,1,UP,{dur:.2f},FAST')
             # advances on DONE:LINAK1
 
         elif state == State.SHIFT_TO_CHUTE:
-            shift_mm = p('shift_distance_cm').get_parameter_value().double_value * 10.0
             self._arduino('bldc,stop')
+            shift_mm = p('shift_distance_cm').get_parameter_value().double_value * 10.0
             self._arduino(f'stepper,left,{shift_mm:.1f}')
-            # advances on DONE:STEPPER
+            # advances on DONE:STEPPER → publishes /chute_in_position True → WAIT_SEEDLING
 
         elif state == State.WAIT_SEEDLING:
             self.get_logger().info('Waiting for seedling_dropped...')
 
         elif state == State.CHUTE_DOWN:
-            dur = p('chute_distance_cm').get_parameter_value().double_value / LINAK_SPEED_CM_S
-            self._linak(f'LINAK,2,DOWN,{dur:.2f}')
+            dur = p('chute_distance_cm').get_parameter_value().double_value / LINAK_SPEED_FULL_CM_S
+            self._linak(f'LINAK,2,DOWN,{dur:.2f},FAST')
             # advances on DONE:LINAK2
 
         elif state == State.CHUTE_RETRACT:
-            dur = p('chute_distance_cm').get_parameter_value().double_value / LINAK_SPEED_CM_S
-            self._linak(f'LINAK,2,UP,{dur:.2f}')
+            dur = p('chute_distance_cm').get_parameter_value().double_value / LINAK_SPEED_FULL_CM_S
+            self._linak(f'LINAK,2,UP,{dur:.2f},FAST')
             # advances on DONE:LINAK2
 
         elif state == State.SHIFT_TO_AUGER:

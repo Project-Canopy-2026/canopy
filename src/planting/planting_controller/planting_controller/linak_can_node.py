@@ -7,8 +7,10 @@ Publishes  to  /linak_status  (std_msgs/String)
 
 Command protocol  (matches planting_fsm_outmax.py)
 ───────────────────────────────────────────────────
-  LINAK,<id>,DOWN,<duration_s>  — extend for <duration_s> s, then STOP
-  LINAK,<id>,UP,<duration_s>    — retract for <duration_s> s, then STOP
+  LINAK,<id>,DOWN,<duration_s>[,FAST|SLOW]  — extend for <duration_s> s, then STOP
+  LINAK,<id>,UP,<duration_s>[,FAST|SLOW]    — retract for <duration_s> s, then STOP
+      Speed tag: FAST = 2.18 cm/s (0xCD), SLOW = 1.09 cm/s (0x64).
+      Omitting the tag uses SLOW (preserves legacy slow-drilling default).
   LINAK,<id>,OUT_MAX            — drive to full extension; completion via TPDO
   LINAK,<id>,IN_MAX             — drive to full retraction; completion via TPDO
   LINAK,<id>,STOP               — stop immediately
@@ -23,7 +25,7 @@ Status replies on /linak_status
 
 ROS parameters
 ──────────────
-  can_channel          str    "can0"
+  can_channel          str    "can1"
   can_bitrate          int    125000
   node_id_1            int    0x20    (LINAK 1 — auger)
   node_id_2            int    0x21    (LINAK 2 — chute)
@@ -68,19 +70,24 @@ CMD_CLEAR = 64256   # clear errors
 POS_OUT_MAX = 64255  # full extension
 POS_IN_MAX  = 150    # full retraction
 
+# Speed bytes for RPDO1 byte 3 (LINAK manual p.11)
+SPEED_FULL = 0xCD   # ~2.18 cm/s
+SPEED_HALF = 0x64   # ~1.09 cm/s
+SPEED_DEFAULT = SPEED_HALF   # used when no speed specified (preserves slow drilling)
+
 # How many consecutive stable TPDO samples (at ~250 ms each) before declaring done
 _STABLE_COUNT = 4    # ~1 second of no movement
 _POS_EPSILON  = 5    # position counts tolerance for "not moving"
 
 
-def _rpdo(code: int) -> list:
+def _rpdo(code: int, speed: int = SPEED_DEFAULT) -> list:
     """Build an 8-byte RPDO1 payload (LINAK manual p.11)."""
     return [
         code & 0xFF, (code >> 8) & 0xFF,
-        0xFB,   # current  — default
-        0xCD,   # speed    — MAX
-        0xFB,   # ramp up  — default
-        0xFB,   # ramp dn  — default
+        0xFB,            # current  — default
+        speed & 0xFF,    # speed byte (0xCD = MAX / 2.18 cm/s, 0x64 = HALF / 1.09 cm/s)
+        0xFB,            # ramp up  — default
+        0xFB,            # ramp dn  — default
         0x00, 0x00,
     ]
 
@@ -183,13 +190,13 @@ class ActuatorChannel:
         """
         lid = self.linak_id
         nid = self.can_node.id
-        self._log.info(f"[LINAK{lid}] Configure node 0x{nid:02X} ...")
+        self._log.debug(f"[LINAK{lid}] Configure node 0x{nid:02X} ...")
 
         # ── Consumer heartbeat watchdog ───────────────────────────────────
         # Watchdog = 3× heartbeat period for OS scheduling jitter margin.
         # The heartbeat thread is already running and warm before this call.
         watchdog_ms = self._hb_ms * 3
-        self._log.info(
+        self._log.debug(
             f"[LINAK{lid}] HB watchdog: period={self._hb_ms} ms, "
             f"timeout={watchdog_ms} ms"
         )
@@ -207,7 +214,7 @@ class ActuatorChannel:
         # ── TPDO1 subscription for position feedback ──────────────────────
         self._network.subscribe(self.cob_tpdo1, self._on_tpdo)
 
-        self._log.info(f"[LINAK{lid}] Configuration done.")
+        self._log.debug(f"[LINAK{lid}] Configuration done.")
 
     def go_operational(self) -> None:
         """
@@ -218,7 +225,7 @@ class ActuatorChannel:
         enough to trip its heartbeat watchdog while the other is being set up.
         """
         lid = self.linak_id
-        self._log.info(f"[LINAK{lid}] NMT → OPERATIONAL ...")
+        self._log.debug(f"[LINAK{lid}] NMT → OPERATIONAL ...")
         self.can_node.nmt.state = "OPERATIONAL"
         time.sleep(0.2)   # let the node settle
 
@@ -227,7 +234,7 @@ class ActuatorChannel:
         self._send(CMD_CLEAR)
         time.sleep(1.0)
 
-        self._log.info(f"[LINAK{lid}] Ready.")
+        self._log.debug(f"[LINAK{lid}] Ready.")
 
     def initialize(self) -> None:
         """Convenience wrapper — configure then go_operational (single-node use)."""
@@ -263,13 +270,14 @@ class ActuatorChannel:
         duration_s: float,
         on_done:    Callable,
         on_err:     Callable,
+        speed:      int = SPEED_DEFAULT,
     ) -> None:
         """Extend/retract for <duration_s> seconds, then STOP."""
         self._abort()
         self._cancel.clear()
         self._move_thread = threading.Thread(
             target=self._worker_timed,
-            args=(direction, duration_s, on_done, on_err),
+            args=(direction, duration_s, on_done, on_err, speed),
             daemon=True,
             name=f"linak{self.linak_id}_timed",
         )
@@ -312,8 +320,8 @@ class ActuatorChannel:
 
     # ── Internals ─────────────────────────────────────────────────────────
 
-    def _send(self, code: int) -> None:
-        self._network.send_message(self.cob_rpdo1, _rpdo(code))
+    def _send(self, code: int, speed: int = SPEED_DEFAULT) -> None:
+        self._network.send_message(self.cob_rpdo1, _rpdo(code, speed))
 
     def _abort(self) -> None:
         """Signal the worker to exit and join it (max 3 s)."""
@@ -328,9 +336,10 @@ class ActuatorChannel:
         duration_s: float,
         on_done:    Callable,
         on_err:     Callable,
+        speed:      int = SPEED_DEFAULT,
     ) -> None:
         try:
-            self._send(direction)
+            self._send(direction, speed)
             cancelled = self._cancel.wait(timeout=duration_s)
             self._send(CMD_STOP)
             if not cancelled:
@@ -393,7 +402,7 @@ class ActuatorChannel:
                         start_pos = pos
                     elif abs(pos - start_pos) > _POS_EPSILON:
                         moving = True
-                        self._log.info(
+                        self._log.debug(
                             f"[LINAK{self.linak_id}] Motion detected: "
                             f"{start_pos} → {pos}"
                         )
@@ -420,7 +429,7 @@ class ActuatorChannel:
 
                 if stable_count >= _STABLE_COUNT:
                     self._send(CMD_STOP)
-                    self._log.info(
+                    self._log.debug(
                         f"[LINAK{self.linak_id}] Position stable at {pos} "
                         f"(target ~{target_pos})"
                     )
@@ -449,7 +458,7 @@ class LinakDriver(Node):
         super().__init__("linak_can_node")
 
         # ── Parameters ────────────────────────────────────────────────────
-        self.declare_parameter("can_channel",         "can0")
+        self.declare_parameter("can_channel",         "can1")
         self.declare_parameter("can_bitrate",         125000)
         self.declare_parameter("node_id_1",           0x20)
         self.declare_parameter("node_id_2",           0x21)
@@ -464,7 +473,7 @@ class LinakDriver(Node):
         eds_param = self.get_parameter("eds_file").value
 
         eds_file = _resolve_eds(eds_param)
-        self.get_logger().info(f"Using EDS: {eds_file}")
+        self.get_logger().debug(f"Using EDS: {eds_file}")
 
         # HB_COB = 0x701 (node 0x01 heartbeat).
         # The actuator's consumer-heartbeat SDO (0x1016 sub1) is set to
@@ -473,7 +482,7 @@ class LinakDriver(Node):
         HB_COB = 0x701
 
         # ── CAN network ───────────────────────────────────────────────────
-        self.get_logger().info(f"Connecting to '{channel}' @ {bitrate} bps ...")
+        self.get_logger().debug(f"Connecting to '{channel}' @ {bitrate} bps ...")
         self._network = canopen.Network()
         self._network.connect(channel=channel, bustype="socketcan", bitrate=bitrate)
         # Prime the heartbeat before any SDO traffic so the actuator doesn't
@@ -496,7 +505,7 @@ class LinakDriver(Node):
         ).start()
         # Warm-up: let ≥3 heartbeats reach the bus before SDO setup begins
         time.sleep((hb_ms / 1000.0) * 3 + 0.05)
-        self.get_logger().info("Heartbeat warm-up complete — starting actuator init ...")
+        self.get_logger().debug("Heartbeat warm-up complete — starting actuator init ...")
 
         # ── Actuator channels ─────────────────────────────────────────────
         self._ch: dict[int, ActuatorChannel] = {
@@ -530,7 +539,7 @@ class LinakDriver(Node):
     # ── Shutdown ──────────────────────────────────────────────────────────────
 
     def shutdown(self) -> None:
-        self.get_logger().info("Shutting down linak_can_node ...")
+        self.get_logger().debug("Shutting down linak_can_node ...")
         for ch in self._ch.values():
             ch.stop()
         self._stop_hb.set()
@@ -544,7 +553,7 @@ class LinakDriver(Node):
 
     def _heartbeat_loop(self) -> None:
         interval = self._hb_ms / 1000.0
-        self.get_logger().info(f"Master heartbeat started ({self._hb_ms} ms, COB 0x{self._hb_cob:03X})")
+        self.get_logger().debug(f"Master heartbeat started ({self._hb_ms} ms, COB 0x{self._hb_cob:03X})")
         while not self._stop_hb.is_set():
             try:
                 self._network.send_message(self._hb_cob, [0x05])
@@ -555,7 +564,7 @@ class LinakDriver(Node):
     # ── Status helpers ────────────────────────────────────────────────────────
 
     def _publish_status(self, token: str) -> None:
-        self.get_logger().info(f"→ /linak_status: {token}")
+        self.get_logger().debug(f"→ /linak_status: {token}")
         self._status_pub.publish(String(data=token))
 
     def _done(self, linak_id: int) -> None:
@@ -577,7 +586,7 @@ class LinakDriver(Node):
           LINAK,<id>,CLEAR
         """
         raw = msg.data.strip()
-        self.get_logger().info(f"← /linak_cmd: '{raw}'")
+        self.get_logger().debug(f"← /linak_cmd: '{raw}'")
 
         parts = [p.strip() for p in raw.split(",")]
 
@@ -608,7 +617,7 @@ class LinakDriver(Node):
             if len(parts) < 4:
                 self.get_logger().error(
                     f"'{action}' requires a duration. "
-                    f"Expected: LINAK,{lid},{action},<seconds>"
+                    f"Expected: LINAK,{lid},{action},<seconds>[,FAST|SLOW]"
                 )
                 return
             try:
@@ -617,9 +626,26 @@ class LinakDriver(Node):
                 self.get_logger().error(f"Invalid duration '{parts[3]}'")
                 return
 
+            # Optional 5th field: speed (FAST=0xCD, SLOW=0x64). Default = SLOW,
+            # preserving the pre-existing slow-drilling behaviour.
+            speed = SPEED_DEFAULT
+            if len(parts) >= 5 and parts[4]:
+                tag = parts[4].upper()
+                if tag == "FAST":
+                    speed = SPEED_FULL
+                elif tag == "SLOW":
+                    speed = SPEED_HALF
+                else:
+                    self.get_logger().error(
+                        f"Invalid speed tag '{parts[4]}' — expected FAST or SLOW"
+                    )
+                    return
+
             direction = CMD_OUT if action == "DOWN" else CMD_IN
             label     = "Extending" if action == "DOWN" else "Retracting"
-            self.get_logger().info(f"[LINAK{lid}] {label} for {duration} s")
+            self.get_logger().debug(
+                f"[LINAK{lid}] {label} for {duration} s (speed=0x{speed:02X})"
+            )
             self._publish_status(f"ACK:LINAK{lid}")
 
             # FIX: capture lid by value in the lambda (was a closure bug)
@@ -628,11 +654,12 @@ class LinakDriver(Node):
                 duration_s = duration,
                 on_done    = lambda lid=lid: self._done(lid),
                 on_err     = lambda detail, lid=lid: self._err(lid, detail),
+                speed      = speed,
             )
 
         # ── Position-based moves ──────────────────────────────────────────
         elif action == "OUT_MAX":
-            self.get_logger().info(f"[LINAK{lid}] OUT_MAX → driving to full extension")
+            self.get_logger().debug(f"[LINAK{lid}] OUT_MAX → driving to full extension")
             self._publish_status(f"ACK:LINAK{lid}")
             ch.start_position_move(
                 direction  = CMD_OUT,
@@ -642,7 +669,7 @@ class LinakDriver(Node):
             )
 
         elif action == "IN_MAX":
-            self.get_logger().info(f"[LINAK{lid}] IN_MAX → driving to full retraction")
+            self.get_logger().debug(f"[LINAK{lid}] IN_MAX → driving to full retraction")
             self._publish_status(f"ACK:LINAK{lid}")
             ch.start_position_move(
                 direction  = CMD_IN,
@@ -653,11 +680,11 @@ class LinakDriver(Node):
 
         # ── Immediate commands ────────────────────────────────────────────
         elif action == "STOP":
-            self.get_logger().info(f"[LINAK{lid}] STOP")
+            self.get_logger().debug(f"[LINAK{lid}] STOP")
             ch.stop()
 
         elif action == "CLEAR":
-            self.get_logger().info(f"[LINAK{lid}] CLEAR")
+            self.get_logger().debug(f"[LINAK{lid}] CLEAR")
             ch.clear()
 
         else:
