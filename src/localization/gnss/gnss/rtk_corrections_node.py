@@ -20,7 +20,7 @@ class ntrip_client(Node):
         self.declare_parameter('password', '')
         self.declare_parameter('mountpoint', 'cmuairlab01')
         
-        self.declare_parameter('serial_port', '/dev/ttyUSB1')
+        self.declare_parameter('serial_port', '/dev/ttyUSB0')
         self.declare_parameter('serial_baud', 115200)
 
         self.user = self.get_parameter('user').get_parameter_value().string_value

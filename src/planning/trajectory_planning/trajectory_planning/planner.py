@@ -499,6 +499,7 @@ class PlannerNode(Node):
             DiagnosticStatus(message=desc, level=level, name=self.get_name())
         )
 
+    # angular_max_delta is changed from 0.3 to 0.1 to avoid the wharthog shaking left and right when driving straight
     def getSmoothed(
         self, in_twist: Twist, linear_max_delta=0.2, angular_max_delta=0.3
     ) -> Twist:

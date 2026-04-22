@@ -62,10 +62,10 @@ class PlantingFsmNode(Node):
         super().__init__('planting_fsm')
 
         # ── OUTDOOR PARAMS ────────────────────────────────────────────────────
-        self.declare_parameter('drilling_distance_cm', 30.0)
-        self.declare_parameter('retract_distance_cm',  30.0)
+        self.declare_parameter('drilling_distance_cm', 3.0)
+        self.declare_parameter('retract_distance_cm',  3.0)
         self.declare_parameter('drilling_dwell',       5.0) 
-        self.declare_parameter('chute_distance_cm',    20.0)
+        self.declare_parameter('chute_distance_cm',    2.0)
         self.declare_parameter('shift_distance_cm',    23.0) # measured
         self.declare_parameter('auger_rpm',            75)
 

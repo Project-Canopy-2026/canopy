@@ -18,15 +18,15 @@ def generate_launch_description():
         )
     )
 
-    # manipulation = IncludeLaunchDescription(
-    #     PythonLaunchDescriptionSource(
-    #         os.path.join(
-    #             get_package_share_directory('manipulation_pkg'),
-    #             'launch',
-    #             'arm_bringup.launch.py'
-    #         )
-    #     )
-    # )
+    manipulation = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory('manipulation_pkg'),
+                'launch',
+                'arm_bringup.launch.py'
+            )
+        )
+    )
 
     trajectory_planner = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -38,7 +38,7 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        #manipulation,
+        manipulation,
         trajectory_planner,
         planting,
     ])
