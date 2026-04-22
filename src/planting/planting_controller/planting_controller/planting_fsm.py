@@ -41,9 +41,11 @@ class PlantingFsmNode(Node):
       /linak_status    (std_msgs/String) — ACK/DONE/ERR from linak_can_node
 
     Publications:
-      /arduino_cmd     (std_msgs/String) — commands to Arduino
-      /linak_cmd       (std_msgs/String) — commands to LINAK actuators
-      planting_state   (std_msgs/String) — current FSM state name
+      /arduino_cmd      (std_msgs/String) — commands to Arduino
+      /linak_cmd        (std_msgs/String) — commands to LINAK actuators
+      planting_state    (std_msgs/String) — current FSM state name
+      /chute_in_position (std_msgs/Bool)  — True when stepper has shifted to chute position
+      /planting_done    (std_msgs/Bool)   — True when full planting sequence completes
 
     Parameters:
       drilling_distance_cm  float  6.0   LINAK_1 down distance (cm)
@@ -79,6 +81,7 @@ class PlantingFsmNode(Node):
         self._linak_pub      = self.create_publisher(String, '/linak_cmd',          10)
         self._state_pub      = self.create_publisher(String, 'planting_state',      10)
         self._chute_pos_pub  = self.create_publisher(Bool,   '/chute_in_position',  10)
+        self._planting_pub   = self.create_publisher(Bool,  '/planting_done',       10)
 
         # ── Subscribers ───────────────────────────────────────────────────
         self.create_subscription(Empty,  '/behavior/do_planting', self._on_do_planting,  10)
@@ -231,6 +234,7 @@ class PlantingFsmNode(Node):
         elif state == State.COMPLETE:
             self._arduino('bldc,stop')
             self.get_logger().info('Planting sequence complete.')
+            self._planting_pub.publish(Bool(data=True))
             self._enter(State.IDLE)                 # ready for next cycle
 
         elif state == State.FAULT:
