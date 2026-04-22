@@ -9,6 +9,29 @@ This system covers:
 
 The project is organized by **subsystem**.
 
+## SVD Setup
+### Pot detector
+```bash
+# terminal1 
+cd /home/teamj/dev/ros2_ws/src/canopy
+source install/setup.bash
+ros2 topic pub /behavior/enable_pot_detection std_msgs/msg/Bool "{data: true}"
+
+# terminal 2
+cd /home/teamj/dev/ros2_ws/src/canopy
+source install/setup.bash
+ros2 topic pub --once /behavior/seedling_dropped std_msgs/msg/Bool "{data: true}"
+
+# terminal 3
+cd /home/teamj/dev/ros2_ws/src/canopy
+source install/setup.bash
+ros2 launch foxglove_bridge foxglove_bridge_launch.xml
+
+# terminal 4
+cd /home/teamj/dev/ros2_ws/src/canopy
+source install/setup.bash
+ros2 launch pot_detector pot_detection.launch.py
+```
 
 ## Repository Structure
 Below shows the repo structure.
