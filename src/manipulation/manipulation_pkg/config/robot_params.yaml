@@ -1,0 +1,4 @@
+gripper_node:
+  ros__parameters:
+    port: /dev/openrb
+    baud: 57600

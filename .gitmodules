@@ -1,7 +1,3 @@
-[submodule "src/swiftnav-ros2"]
-	path = src/swiftnav-ros2
+[submodule "src/external/swiftnav-ros2"]
+	path = src/external/swiftnav-ros2
 	url = https://github.com/swift-nav/swiftnav-ros2.git
-
-[submodule "src/external/xarm_ros2"]
-	path = src/external/xarm_ros2
-	url = https://github.com/Project-Canopy-2026/xarm_ros2.git

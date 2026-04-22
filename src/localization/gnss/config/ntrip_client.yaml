@@ -7,5 +7,5 @@
     port: 2101
     mountpoint: 'cmuairlab01'
 
-    serial_port: '/dev/ttyUSB0'
+    serial_port: '/dev/ttyUSB1'
     serial_baud: 115200
