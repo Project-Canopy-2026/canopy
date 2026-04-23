@@ -63,14 +63,16 @@ def launch_setup(context, *args, **kwargs):
     ros2_control_params = LaunchConfiguration('ros2_control_params', default='')
     extra_robot_api_params_path = LaunchConfiguration('extra_robot_api_params_path', default='')
 
+    ros_namespace = LaunchConfiguration('ros_namespace', default='').perform(context)
+
     if not ros2_control_params.perform(context):
         # ros2 control params
         ros2_control_params = generate_ros2_control_params_temp_file(
             os.path.join(get_package_share_directory('xarm_controller'), 'config', '{}{}_controllers.yaml'.format(robot_type.perform(context), dof.perform(context) if robot_type.perform(context) in ('xarm', 'lite') else '')),
-            prefix=prefix.perform(context), 
+            prefix=prefix.perform(context),
             add_gripper=add_gripper.perform(context) in ('True', 'true'),
             add_bio_gripper=add_bio_gripper.perform(context) in ('True', 'true'),
-            ros_namespace=LaunchConfiguration('ros_namespace', default='').perform(context),
+            ros_namespace=ros_namespace,
             robot_type=robot_type.perform(context)
         )
 
@@ -127,11 +129,11 @@ def launch_setup(context, *args, **kwargs):
         extra_robot_api_params_path=extra_robot_api_params_path.perform(context)
     )
 
-    # ros2 control node
+    # ros2 control node — namespace isolates this controller_manager from the Warthog's
     ros2_control_node = Node(
         package='controller_manager',
-        executable='' \
-        '',
+        executable='ros2_control_node',
+        namespace=ros_namespace,
         parameters=[
             robot_description,
             ros2_control_params,
