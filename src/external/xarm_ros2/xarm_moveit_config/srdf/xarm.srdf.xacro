@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<robot xmlns:xacro="http://wiki.ros.org/xacro" name="UF_ROBOT">
+<!-- parameters -->
+<xacro:arg name="prefix" default="" />
+<xacro:arg name="dof" default="7" />
+<xacro:arg name="robot_type" default="xarm" />
+<xacro:arg name="add_gripper" default="false"/>
+<xacro:arg name="add_vacuum_gripper" default="false" />
+<xacro:arg name="add_bio_gripper" default="false" />
+<xacro:arg name="add_other_geometry" default="false" />
+
+
+
+
+<xacro:include filename="$(find xarm_moveit_config)/srdf/xarm_macro.srdf.xacro" />
+<xacro:xarm_macro_srdf prefix="$(arg prefix)" dof="$(arg dof)" robot_type="$(arg robot_type)"
+  add_gripper="$(arg add_gripper)" add_vacuum_gripper="$(arg add_vacuum_gripper)" add_bio_gripper="$(arg add_bio_gripper)" add_other_geometry="$(arg add_other_geometry)" />
+
+
+
+
+<!-- Custom fixed tool group -->
+<group name="$(arg prefix)custom_tool">
+  <link name="$(arg prefix)custom_gripper_base"/>
+  <link name="$(arg prefix)tool_tcp"/>
+</group>
+
+
+
+
+<!-- Register the custom tool as an end effector attached to the wrist -->
+<end_effector
+  name="$(arg prefix)custom_eef"
+  parent_link="$(arg prefix)link_eef"
+  group="$(arg prefix)custom_tool" />
+
+
+
+
+<!-- Disable obvious adjacent collisions -->
+<disable_collisions link1="$(arg prefix)link_eef" link2="$(arg prefix)custom_gripper_base" reason="Adjacent"/>
+<disable_collisions link1="$(arg prefix)custom_gripper_base" link2="$(arg prefix)tool_tcp" reason="Adjacent"/>
+<disable_collisions link1="$(arg prefix)link7" link2="$(arg prefix)custom_gripper_base" reason="Never"/>
+<disable_collisions link1="$(arg prefix)link6" link2="$(arg prefix)custom_gripper_base" reason="Never"/>
+
+
+<!-- Camera collision disables -->
+<disable_collisions link1="$(arg prefix)link_eef" link2="$(arg prefix)d405_link" reason="Adjacent"/>
+<disable_collisions link1="$(arg prefix)custom_gripper_base" link2="$(arg prefix)d405_link" reason="Never"/>
+
+
+
+
+</robot>

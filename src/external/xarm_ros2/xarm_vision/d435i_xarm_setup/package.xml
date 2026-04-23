@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>d435i_xarm_setup</name>
+  <version>0.0.0</version>
+  <description>TODO: Package description</description>
+  <maintainer email="vinman.cub@gmail.com">vm</maintainer>
+  <license>TODO: License declaration</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>image_view</depend>
+  <depend>tf_transformations</depend>
+  <depend>find_object_2d</depend>
+  <depend>rclcpp</depend>
+  <depend>std_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
+  <depend>object_recognition_msgs</depend>
+  <depend>xarm_msgs</depend>
+  <depend>xarm_api</depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

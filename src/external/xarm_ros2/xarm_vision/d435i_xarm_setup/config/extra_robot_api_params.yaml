@@ -1,0 +1,14 @@
+ufactory_driver:
+  ros__parameters:
+    services:
+      motion_enable: true
+      clean_error: true
+      clean_warn: true
+      set_mode: true
+      set_state: true
+      set_tcp_offset: true
+      set_vacuum_gripper: true
+      set_gripper_enable: true
+      set_gripper_speed: true
+      set_gripper_position: true
+      set_position: true
