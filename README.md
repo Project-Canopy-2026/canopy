@@ -3,8 +3,8 @@
 
 ### Terminal 0 - CAN Bus Setup for Planting + Seedling dropped
 ``` bash
-sudo ip link set can0 up type can bitrate 125000
-ip link show can0   # verify
+sudo ip link set can1 up type can bitrate 125000
+ip link show can1   # verify
 ls /dev/ttyACM*
 ######### Seedling dropped ############
 cd ~/dev/ros2_ws
@@ -75,7 +75,7 @@ ros2 run ros1_bridge dynamic_bridge --bridge-all-topics
 ros2 topic pub --once /planning/requested_mode canopy_msgs/msg/Mode "{level: [2]}"
 
 
-ros2 topic pub --once /planning/complete_plan canopy_msgs/msg/PlantingPlan "{bounds_geojson: '', seedlings: [{latitude: 40.440993, longitude: -79.946865, species_id: 'seedling_1'}]}"
+ros2 topic pub --once /planning/complete_plan canopy_msgs/msg/PlantingPlan "{bounds_geojson: '', seedlings: [{latitude: 40.441021, longitude: -79.947229, species_id: 'seedling_1'}]}"
 ```
 
 # Arm + Planting
