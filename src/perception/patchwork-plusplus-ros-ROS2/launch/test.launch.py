@@ -29,17 +29,24 @@ def generate_launch_description():
             parameters=[
                 {'cloud_topic': LaunchConfiguration("cloud_topic")}, # Input pointcloud
                 {'frame_id': LaunchConfiguration("cloud_frame")},
-                {'sensor_height': 0.8},
+                {'sensor_height': 1.365},    # unit: m, Mounting height of the lidar above ground (ground-plane fit)
                 {'num_iter': 3},             # Number of iterations for ground plane estimation using PCA.
                 {'num_lpr': 20},             # Maximum number of points to be selected as lowest points representative.
                 {'num_min_pts': 0},          # Minimum number of points to be estimated as ground plane in each patch.
                 {'th_seeds': 0.3},           # threshold for lowest point representatives using in initial seeds selection of ground points.
-                {'th_dist': 0.125},          # threshold for thickenss of ground.
+                {'th_dist': 0.2},          # threshold for thickenss of ground.
                 {'th_seeds_v': 0.25},        # threshold for lowest point representatives using in initial seeds selection of vertical structural points.
                 {'th_dist_v': 0.9},          # threshold for thickenss of vertical structure.
-                {'max_r': 80.0},             # max_range of ground estimation area
-                {'min_r': 1.0},              # min_range of ground estimation area
-                {'uprightness_thr': 0.101},  # threshold of uprightness using in Ground Likelihood Estimation(GLE). Please refer paper for more information about GLE.
+                # NOTE: the node declares 'max_range'/'min_range'. The old 'max_r'/'min_r' spellings
+                # were undeclared, so ROS 2 silently dropped them and the defaults (80.0/0.0) were used.
+                {'max_range': 20.0},         # max_range of ground estimation area
+                {'min_range': 1.5},          # min_range of ground estimation area
+                {'uprightness_thr': 0.707},  # threshold of uprightness using in Ground Likelihood Estimation(GLE). Please refer paper for more information about GLE.
+
+                # The lidar is mounted tilted down, so the cloud is de-rotated into a
+                # gravity-aligned frame before segmentation. Positive pitch = tilted downwards.
+                {'lidar_roll_deg': 0.69},    # ground-plane fit
+                {'lidar_pitch_deg': 24.85},  # ground-plane fit
                 {'verbose': False},          # display verbose info
                 {'display_time': False},     # display running_time and pointcloud sizes
             ],

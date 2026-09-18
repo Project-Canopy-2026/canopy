@@ -54,6 +54,11 @@ $ ros2 launch patchworkpp demo.launch.py  cloud_topic:=/lexus3/os_center/points 
 $ ros2 bag play ~/Downloads/lexus3-2024-04-05-gyor.mcap --loop
 # Start visualization
 $ ros2 launch patchworkpp rviz1.launch.py
+
+```bash
+ros2 launch patchworkpp test.launch.py
+
+ros2 launch patchworkpp rviz1.launch.py
 ```
 
 > [!WARNING]  

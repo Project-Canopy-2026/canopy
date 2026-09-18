@@ -36,6 +36,12 @@ sudo ip addr flush dev enP8p1s0
 sudo ip addr add 192.168.131.100/24 dev enx0050b6e57539
 sudo ip route del default via 192.168.131.1 dev enP8p1s0
 
+# 2b. pin ROS 2 (Fast DDS) to the warthog link. Without this we can see the
+#     warthog's topics but receive no messages (tf, odom, imu are all silent).
+#     Needed in EVERY terminal - add it to ~/.bashrc to make it permanent.
+export FASTRTPS_DEFAULT_PROFILES_FILE=~/dev/ros2_ws/src/canopy/config/dds/fastdds_canopy.xml
+ros2 daemon stop
+
 
 # 3. connect to gnss via ethernet
 sudo ip addr add 192.168.0.10/24 dev enP8p1s0

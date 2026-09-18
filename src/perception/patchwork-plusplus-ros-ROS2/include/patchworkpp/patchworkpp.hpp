@@ -19,6 +19,7 @@
 #include <queue>
 #include <mutex>
 #include <patchworkpp/utils.hpp>
+#include <pcl/common/eigen.h>
 #include "rclcpp_components/register_node_macro.hpp"
 #include "rcl_interfaces/msg/set_parameters_result.hpp"
 
@@ -77,6 +78,8 @@ public:
         this->declare_parameter<double>("uprightness_thr", uprightness_thr_);
         this->declare_parameter<double>("adaptive_seed_selection_margin", adaptive_seed_selection_margin_);
         this->declare_parameter<double>("RNR_ver_angle_thr", RNR_ver_angle_thr_);
+        this->declare_parameter<double>("lidar_roll_deg", lidar_roll_deg_);
+        this->declare_parameter<double>("lidar_pitch_deg", lidar_pitch_deg_);
 
         this->declare_parameter<int>("num_zones", num_zones_);
         this->declare_parameter<double>("th_seeds_v", th_seeds_v_);
@@ -98,6 +101,9 @@ public:
         this->get_parameter<double>("uprightness_thr", uprightness_thr_);
         this->get_parameter<double>("adaptive_seed_selection_margin", adaptive_seed_selection_margin_);
         this->get_parameter<double>("RNR_ver_angle_thr", RNR_ver_angle_thr_);
+        this->get_parameter<double>("lidar_roll_deg", lidar_roll_deg_);
+        this->get_parameter<double>("lidar_pitch_deg", lidar_pitch_deg_);
+        update_gravity_alignment();
 
         this->get_parameter<int>("num_zones", num_zones_);
         this->get_parameter<double>("th_seeds_v", th_seeds_v_);
@@ -120,6 +126,8 @@ public:
         RCLCPP_INFO_STREAM(this->get_logger(), "Normal vector threshold: " <<  uprightness_thr_);
         RCLCPP_INFO_STREAM(this->get_logger(), "adaptive_seed_selection_margin: " << adaptive_seed_selection_margin_);
         RCLCPP_INFO_STREAM(this->get_logger(), "RNR_ver_angle_thr: " << RNR_ver_angle_thr_);
+        RCLCPP_INFO_STREAM(this->get_logger(), "Lidar roll (deg): " << lidar_roll_deg_);
+        RCLCPP_INFO_STREAM(this->get_logger(), "Lidar pitch (deg, +ve = tilted down): " << lidar_pitch_deg_);
         RCLCPP_INFO_STREAM(this->get_logger(), "Num. zones: " << num_zones_);
         RCLCPP_INFO_STREAM(this->get_logger(), "cloud_topic: " << cloud_topic);
         RCLCPP_INFO_STREAM(this->get_logger(), "frame_id: " << frame_id_);
@@ -197,6 +205,21 @@ public:
 
     };
 
+    /*
+        Rebuild the sensor <-> gravity-aligned transforms from the roll/pitch parameters.
+        `tf_sensor_to_level_` is the pose of the sensor frame in a level frame, so applying
+        it to a point in sensor coordinates yields that point in the gravity-aligned frame.
+    */
+    void update_gravity_alignment()
+    {
+        const float roll  = static_cast<float>(lidar_roll_deg_ * M_PI / 180.0);
+        const float pitch = static_cast<float>(lidar_pitch_deg_ * M_PI / 180.0);
+
+        tf_sensor_to_level_ = pcl::getTransformation(0.0f, 0.0f, 0.0f, roll, pitch, 0.0f);
+        tf_level_to_sensor_ = tf_sensor_to_level_.inverse();
+        gravity_align_ = (std::abs(lidar_roll_deg_) > 1e-6) || (std::abs(lidar_pitch_deg_) > 1e-6);
+    }
+
     void estimate_ground(pcl::PointCloud<PointT> cloud_in, pcl::PointCloud<PointT> &cloud_ground, pcl::PointCloud<PointT> &cloud_nonground, double &time_taken);
 
 
@@ -220,6 +243,21 @@ private:
     double max_range_ = 80.0;
     double min_range_ = 0.0;
     double uprightness_thr_ =  0.707;
+
+    /*
+        Patchwork++ assumes the sensor z-axis is gravity-aligned: the CZM rings, the
+        lowest-z seed selection and the `is_upright` / `is_heading_outside` tests are all
+        expressed in the sensor frame. A tilted lidar breaks every one of them, and it also
+        feeds A-GLE a per-ring elevation distribution whose spread is dominated by the tilt
+        rather than by terrain, which makes the adaptive thresholds oscillate frame to frame.
+        So we de-rotate the cloud into a gravity-aligned frame before segmenting and rotate
+        the results back, leaving the published clouds in the original sensor frame.
+    */
+    double lidar_roll_deg_ = 0.0;
+    double lidar_pitch_deg_ = 0.0;   // ROS convention: positive pitch tilts +x downwards
+    bool gravity_align_ = false;
+    Eigen::Affine3f tf_sensor_to_level_ = Eigen::Affine3f::Identity();
+    Eigen::Affine3f tf_level_to_sensor_ = Eigen::Affine3f::Identity();
     double adaptive_seed_selection_margin_;
     double min_range_z2_ = 12.3625; // 12.3625
     double min_range_z3_ = 22.025; // 22.025
@@ -506,6 +544,16 @@ rcl_interfaces::msg::SetParametersResult PatchWorkpp<PointT>::parametersCallback
         if(param.get_name() == "RNR_ver_angle_thr")
         {
             RNR_ver_angle_thr_ = param.as_double();
+        }
+        if(param.get_name() == "lidar_roll_deg")
+        {
+            lidar_roll_deg_ = param.as_double();
+            update_gravity_alignment();
+        }
+        if(param.get_name() == "lidar_pitch_deg")
+        {
+            lidar_pitch_deg_ = param.as_double();
+            update_gravity_alignment();
         }
         if(param.get_name() == "RNR_intensity_thr")
         {
@@ -1009,7 +1057,20 @@ void PatchWorkpp<PointT>::callbackCloud(const sensor_msgs::msg::PointCloud2::Con
 
     pcl::fromROSMsg(*cloud_msg, pc_curr);
 
-    estimate_ground(pc_curr, pc_ground, pc_non_ground, time_taken);
+    if (gravity_align_)
+    {
+        // Segment in a gravity-aligned frame, then rotate the results back so the published
+        // clouds stay in the sensor frame the input arrived in.
+        pcl::PointCloud<PointT> pc_level;
+        pcl::transformPointCloud(pc_curr, pc_level, tf_sensor_to_level_);
+        estimate_ground(pc_level, pc_ground, pc_non_ground, time_taken);
+        pcl::transformPointCloud(pc_ground, pc_ground, tf_level_to_sensor_);
+        pcl::transformPointCloud(pc_non_ground, pc_non_ground, tf_level_to_sensor_);
+    }
+    else
+    {
+        estimate_ground(pc_curr, pc_ground, pc_non_ground, time_taken);
+    }
     if(display_time_){
         RCLCPP_INFO_STREAM(rclcpp::get_logger("patchworkpp"), "\033[1;32m" << "Input PointCloud: " << pc_curr.size() << " -> Ground: " << pc_ground.size() <<  "/ NonGround: " << pc_non_ground.size()
             << " (running_time: " << time_taken << " sec)" << "\033[0m");
