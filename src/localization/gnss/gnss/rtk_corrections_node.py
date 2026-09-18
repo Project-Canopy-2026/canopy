@@ -14,11 +14,11 @@ class ntrip_client(Node):
 
         #self.rtcm_topic = '/rtcm'
 
-        self.declare_parameter('server', 'rtk2go.com')
+        self.declare_parameter('server', 'caster.emlid.com')
         self.declare_parameter('port', 2101)
-        self.declare_parameter('user', 'nkayiti@andrew.cmu.edu')
-        self.declare_parameter('password', '')
-        self.declare_parameter('mountpoint', 'cmuairlab01')
+        self.declare_parameter('user', 'u63376')
+        self.declare_parameter('password', '928fjh')
+        self.declare_parameter('mountpoint', 'MP30467')
         
         self.declare_parameter('serial_port', '/dev/ttyUSB0')
         self.declare_parameter('serial_baud', 115200)

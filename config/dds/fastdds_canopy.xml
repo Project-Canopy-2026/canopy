@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Fast DDS profile for the Canopy Jetson.
+
+  The Jetson has several networks (wifi, 192.168.0.x / 192.168.1.x for sensors
+  and the arm, 192.168.131.x to the W200). With default settings Fast DDS uses
+  all of them and the W200 never receives our discovery traffic: we can see its
+  topics but no messages arrive. This profile limits ROS traffic to the robot
+  link and loopback, and finds the W200 PC by unicast instead of multicast.
+
+  Enable (every terminal, e.g. in ~/.bashrc):
+    export FASTRTPS_DEFAULT_PROFILES_FILE=~/dev/ros2_ws/src/canopy/config/dds/fastdds_canopy.xml
+  then `ros2 daemon stop` once so the daemon reloads it.
+-->
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <transport_descriptors>
+    <!-- Zero-copy transport for nodes on this Jetson (point clouds, images). -->
+    <transport_descriptor>
+      <transport_id>canopy_shm</transport_id>
+      <type>SHM</type>
+    </transport_descriptor>
+    <!-- UDP only on loopback and the W200 link. Loopback keeps local nodes
+         talking if the USB-ethernet adapter is unplugged. -->
+    <transport_descriptor>
+      <transport_id>canopy_udp</transport_id>
+      <type>UDPv4</type>
+      <interfaceWhiteList>
+        <address>127.0.0.1</address>
+        <address>192.168.131.100</address>
+      </interfaceWhiteList>
+    </transport_descriptor>
+  </transport_descriptors>
+
+  <participant profile_name="canopy_participant" is_default_profile="true">
+    <rtps>
+      <userTransports>
+        <transport_id>canopy_shm</transport_id>
+        <transport_id>canopy_udp</transport_id>
+      </userTransports>
+      <useBuiltinTransports>false</useBuiltinTransports>
+      <builtin>
+        <!-- Unicast discovery, so we don't depend on multicast leaving the
+             right interface.
+             - W200 PC: default ports; its participants also announce to us.
+             - This host: every process is a separate participant on port
+               7410 + 2*id (ROS_DOMAIN_ID 0). Without a port, Fast DDS only
+               probes ids 0-4, so once long-running nodes hold those ids, newly
+               started processes can't find each other. List ids 0-40. -->
+        <initialPeersList>
+          <locator><udpv4><address>192.168.131.1</address></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7410</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7412</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7414</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7416</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7418</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7420</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7422</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7424</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7426</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7428</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7430</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7432</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7434</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7436</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7438</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7440</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7442</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7444</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7446</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7448</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7450</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7452</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7454</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7456</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7458</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7460</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7462</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7464</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7466</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7468</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7470</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7472</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7474</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7476</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7478</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7480</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7482</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7484</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7486</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7488</port></udpv4></locator>
+          <locator><udpv4><address>127.0.0.1</address><port>7490</port></udpv4></locator>
+        </initialPeersList>
+        <discovery_config>
+          <initialAnnouncements>
+            <count>5</count>
+            <period>
+              <nanosec>100000000</nanosec>
+            </period>
+          </initialAnnouncements>
+        </discovery_config>
+      </builtin>
+    </rtps>
+  </participant>
+</profiles>

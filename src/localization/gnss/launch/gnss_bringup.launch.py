@@ -16,6 +16,16 @@ def generate_launch_description():
         'gnss_driver.yaml'
     )
 
+    # The Warthog publishes TF under its namespace (/w200_0120/tf). Relay it onto
+    # /tf and /tf_static so every node can use the default topics.
+    tf_relay = Node(
+        package='gnss',
+        executable='tf_relay',
+        name='tf_relay',
+        output='screen',
+        parameters=[{'robot_namespace': 'w200_0120'}],
+    )
+
     rtk_corrections = Node(
         package = 'gnss',
         name = 'ntrip_client',
@@ -63,6 +73,7 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
+        tf_relay,
         rtk_corrections,
         swiftnav_gnss_driver,
         gps_static_tf,

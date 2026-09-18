@@ -34,6 +34,7 @@ setup(
             'rtk_corrections_node = gnss.rtk_corrections_node:main',
             'odom_to_tf_publisher = gnss.odom_to_tf_publisher:main',
             'gnss_interface = gnss.gnss_interface:main',
+            'tf_relay = gnss.tf_relay:main',
         ],
     },
 )

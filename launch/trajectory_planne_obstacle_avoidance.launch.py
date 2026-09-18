@@ -41,7 +41,7 @@ def generate_launch_description():
             "min_obstacle_height": 0.2,    # above ground; lower points are ignored
             "max_obstacle_height": 2.0,    # above ground; ignores overhanging canopy
             # Box in base_link that covers the robot body/arm, so self-hits aren't obstacles.
-            # TODO: set to the measured robot extent including the arm.
+            # DONE: set to the measured robot extent including the arm.
             "self_filter_min_x": -0.9,
             "self_filter_max_x": 0.9,
             "self_filter_min_y": -0.8,
@@ -99,6 +99,7 @@ def generate_launch_description():
         output="screen",
         parameters=[{
             "calibration": "/opt/ros/humble/share/velodyne_pointcloud/params/VLP16_hires_db.yaml",
+            "model": "VLP16",  # defaults to 64E otherwise
             "min_range": 0.1, # allowed 0.1 to 10
             "max_range": 100.0, # allowed 0.1 to 200
             "organize_cloud": False,
@@ -123,7 +124,7 @@ def generate_launch_description():
             {"th_dist_v": 0.9},
             # Points outside [min_range, max_range] skip segmentation and go straight to
             # /nonground. The lowest beam meets flat ground ~1.5 m ahead, so keep min_range below that.
-            {"max_range": 20.0},
+            {"max_range": 8.0},
             {"min_range": 1.0},
             {"uprightness_thr": 0.707},
             # Cloud is de-rotated into a level frame before segmentation. +ve pitch = tilted down.
@@ -141,8 +142,8 @@ def generate_launch_description():
         executable="static_transform_publisher",
         name="base_to_velodyne_static_tf",
         arguments=[
-            "--x", "0.0",       # TODO: measure lidar x offset from base_link
-            "--y", "0.0",       # TODO: measure lidar y offset from base_link (+ve = left)
+            "--x", "0.84",       # DONE: measure lidar x offset from base_link
+            "--y", "0.52",       # DONE: measure lidar y offset from base_link (+ve = left)
             "--z", "1.065",     # 1.365 m above ground (ground-plane fit) - ~0.30 m base_link height (Warthog wheel radius)
             "--yaw", "0.0",
             "--pitch", "0.4337",  # 24.85 deg tilted down (ground-plane fit); keep in sync with lidar_pitch_deg
@@ -179,17 +180,16 @@ def generate_launch_description():
 
     return LaunchDescription([
         gnss,
-        # LiDAR path disabled for GPS-only planner debugging. Re-enable
-        # velodyne_* and patchwork_ground_segmentation (and swap
-        # free_occupancy_grid back to occupancy_grid) to run with real sensor data.
-        # velodyne_static_tf,
-        # velodyne_driver,
-        # velodyne_pointcloud,
-        # patchwork_ground_segmentation,
-        # occupancy_grid,
+        # LiDAR obstacle path. For GPS-only planner debugging, comment out the
+        # velodyne_* / patchwork / occupancy_grid nodes and use free_occupancy_grid instead.
+        velodyne_static_tf,
+        velodyne_driver,
+        velodyne_pointcloud,
+        patchwork_ground_segmentation,
+        occupancy_grid,
         fsm,
         plan_manager,
-        free_occupancy_grid,
+        # free_occupancy_grid,
         cost_map,
         trajectory_planner,
         #demo_waypoint_follower,

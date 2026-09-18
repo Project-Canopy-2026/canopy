@@ -240,25 +240,29 @@ class OccupancyGridNode(Node):
         GRID_WIDTH = 100
         GRID_HEIGHT = GRID_WIDTH
 
-        # Now we need to project everything to an occupancy grid
-        arr = pts / RES
-        #arr = arr.astype(np.int8)
-        arr = arr.astype(np.int32)
+        # Ground is already removed by Patchwork++; keep points in the obstacle height band.
+        # Filter in metres, before discretising (base_link is above the ground).
+        z_above_ground = pts[:, 2] + self.base_link_height
+        in_height_band = (z_above_ground > self.min_obstacle_height) & (z_above_ground < self.max_obstacle_height)
 
-        # TODO: Perform PROPER plane segmentation
-        # For now, we'll naively check height
-        HEIGHT_CUTOFF = 0.3
-        arr = arr[arr[:, 2] > HEIGHT_CUTOFF]
-        arr = arr[:, :2]
+        # Drop returns off the robot's own body/arm.
+        in_self_box = (
+            (pts[:, 0] > self.self_filter_min_x) & (pts[:, 0] < self.self_filter_max_x)
+            & (pts[:, 1] > self.self_filter_min_y) & (pts[:, 1] < self.self_filter_max_y)
+        )
+        pts = pts[in_height_band & ~in_self_box]
 
-        # Discard indices outside of bounds
+        # Now we need to project everything to an occupancy grid.
+        # floor (not truncation toward zero) so negative coordinates land in the right cell.
+        arr = np.floor(pts[:, :2] / RES).astype(np.int32)
 
         # Offset by origin
         arr[:, 0] += ORIGIN_X_PX
         arr[:, 1] += ORIGIN_Y_PX
 
-        arr = arr[np.logical_and(arr[:, 0] > 0, arr[:, 0] < GRID_HEIGHT)]
-        arr = arr[np.logical_and(arr[:, 1] > 1, arr[:, 1] < GRID_WIDTH)]
+        # Discard indices outside of bounds
+        arr = arr[np.logical_and(arr[:, 0] >= 0, arr[:, 0] < GRID_HEIGHT)]
+        arr = arr[np.logical_and(arr[:, 1] >= 0, arr[:, 1] < GRID_WIDTH)]
 
         grid = np.zeros((GRID_HEIGHT, GRID_WIDTH), dtype=np.int8)
 
@@ -286,7 +290,18 @@ class OccupancyGridNode(Node):
         # plt.show()
 
     def setUpParameters(self):
-        pass
+        # dynamic_typing so a launch file passing an int (e.g. 0 instead of 0.0) doesn't crash the node
+        def float_param(name, default):
+            desc = ParameterDescriptor(dynamic_typing=True)
+            return float(self.declare_parameter(name, default, desc).value)
+
+        self.base_link_height = float_param("base_link_height", 0.30)
+        self.min_obstacle_height = float_param("min_obstacle_height", 0.2)
+        self.max_obstacle_height = float_param("max_obstacle_height", 2.0)
+        self.self_filter_min_x = float_param("self_filter_min_x", -0.9)
+        self.self_filter_max_x = float_param("self_filter_max_x", 0.9)
+        self.self_filter_min_y = float_param("self_filter_min_y", -0.8)
+        self.self_filter_max_y = float_param("self_filter_max_y", 0.8)
 
 
 def main(args=None):
