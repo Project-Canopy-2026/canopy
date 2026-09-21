@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>nav_debug_viz</name>
+  <version>0.0.0</version>
+  <description>Debug visualization for localization, seedlings, and global/local navigation
+    (RViz2 markers and Foxglove Map/GeoJSON).</description>
+
+  <maintainer email="shuyilin@andrew.cmu.edu">Shuyi Lin</maintainer>
+  <license>MIT</license>
+
+  <depend>rclpy</depend>
+  <depend>tf2_ros</depend>
+  <depend>canopy_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>visualization_msgs</depend>
+  <depend>python3-utm</depend>
+  <depend>python3-scipy</depend>
+  <!-- Optional: GeoJSON layer for the Foxglove Map panel (ros-humble-foxglove-msgs) -->
+  <exec_depend>foxglove_msgs</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

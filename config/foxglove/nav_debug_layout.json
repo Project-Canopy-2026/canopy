@@ -1,0 +1,101 @@
+{
+  "configById": {
+    "map!navmap": {
+      "layer": "satellite",
+      "zoomLevel": 19,
+      "followTopic": "/vis/robot_fix",
+      "disabledTopics": [],
+      "topicColors": {
+        "/gps/navsatfix": "#ff00ff",
+        "/vis/robot_fix": "#3366ff"
+      }
+    },
+    "3D!nav3d": {
+      "followTf": "base_link",
+      "followMode": "follow-position",
+      "scene": { "backgroundColor": "#1e1e1e" },
+      "cameraState": {
+        "perspective": false,
+        "distance": 40,
+        "phi": 0,
+        "thetaOffset": 90,
+        "target": [0, 0, 0],
+        "targetOffset": [0, 0, 0],
+        "targetOrientation": [0, 0, 0, 1],
+        "fovy": 45,
+        "near": 0.5,
+        "far": 5000
+      },
+      "layers": {
+        "grid": {
+          "layerId": "foxglove.Grid",
+          "visible": true,
+          "frameId": "map",
+          "size": 200,
+          "divisions": 200,
+          "lineWidth": 0.5,
+          "color": "#505050",
+          "position": [0, 0, 0],
+          "rotation": [0, 0, 0],
+          "order": 1
+        }
+      },
+      "transforms": {},
+      "topics": {
+        "/cost/total": { "visible": true, "colorMode": "costmap", "alpha": 0.6 },
+        "/cost/occupancy": { "visible": false, "colorMode": "map", "alpha": 0.5 },
+        "/cost/dist_to_seedlings": { "visible": false, "colorMode": "costmap", "alpha": 0.6 },
+        "/nonground": { "visible": true, "colorMode": "flat", "flatColor": "#ff3232", "pointSize": 3 },
+        "/ground": { "visible": false, "colorMode": "flat", "flatColor": "#787878", "pointSize": 2 },
+        "/vis/candidates": { "visible": true },
+        "/cmd_vel/path": { "visible": true, "lineWidth": 0.12, "gradient": ["#00ffff", "#00ffff"] },
+        "/vis/seedlings": { "visible": true },
+        "/vis/robot": { "visible": true },
+        "/vis/robot_trail": { "visible": true, "lineWidth": 0.08, "gradient": ["#3366ff", "#3366ff"] },
+        "/vis/global_path": { "visible": true, "lineWidth": 0.1, "gradient": ["#ff8c00", "#ff8c00"] },
+        "/gnss/odom": { "visible": true },
+        "/planning/closest_seedling_bl": { "visible": true },
+        "/vis/route": { "visible": false },
+        "/vis/forest_plan": { "visible": false }
+      }
+    },
+    "Plot!navplot": {
+      "title": "Heading / distance",
+      "paths": [
+        { "value": "/gnss/yaw.data", "enabled": true, "timestampMethod": "receiveTime", "label": "GPS yaw (rad, ENU)" },
+        { "value": "/planning/distance_to_seedling.data", "enabled": true, "timestampMethod": "receiveTime", "label": "distance to target (m)" }
+      ],
+      "showLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "followingViewWidth": 60
+    },
+    "RawMessages!navdiag": {
+      "topicPath": "/diagnostics",
+      "diffEnabled": false,
+      "diffMethod": "custom",
+      "diffTopicPath": "",
+      "showFullMessageForDiff": false,
+      "expansion": "all"
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "playbackConfig": { "speed": 1 },
+  "layout": {
+    "direction": "row",
+    "first": {
+      "direction": "column",
+      "first": "map!navmap",
+      "second": "Plot!navplot",
+      "splitPercentage": 65
+    },
+    "second": {
+      "direction": "column",
+      "first": "3D!nav3d",
+      "second": "RawMessages!navdiag",
+      "splitPercentage": 75
+    },
+    "splitPercentage": 45
+  }
+}
