@@ -111,7 +111,7 @@ time.sleep(1)
 
 # === GO DOWN (extend) to position 500, printing position feedback ===
 print("⬇️  DOWN to 500...")
-send_actuator_command(500)
+send_actuator_command(150)
 monitor(10)
 # # === RUN OUT ===
 # print("⬆️  RUN OUT...")
@@ -128,10 +128,10 @@ print("⬇️  RUN IN...")
 send_actuator_command(150)
 monitor(10)
 
-# === Final STOP ===
-print("Final STOP...")
-send_actuator_command(64259)
-monitor(0.5)
+# # === Final STOP ===
+# print("Final STOP...")
+# send_actuator_command(64259)
+# monitor(0.5)
 
 # === Shutdown ===
 print("Disconnecting...")
