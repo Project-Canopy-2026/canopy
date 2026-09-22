@@ -50,6 +50,7 @@ class PlannerNode(Node):
 
         self.create_subscription(Twist, "/cmd_vel/teleop", self.teleopTwistCb, 1)
         self.create_subscription(OccupancyGrid, "/cost/total", self.totalCostCb, 1)
+        self.create_subscription(OccupancyGrid, "/cost/occupancy", self.occCb, 1)
         self.create_subscription(
             GeoPoint, "/planning/goal_pose_geo", self.goalPointGeoCb, 1
         )
@@ -100,6 +101,15 @@ class PlannerNode(Node):
         self.closest_point_bl = None
         self.remaining_seedling_count = 0
 
+        self.occ_map = None
+        self.occ_info = None
+
+        # Obstacle stop box, in base_link metres
+        self.STOP_BOX_MIN_X = 1.0  # starts past the occupancy node's self-filter
+        self.STOP_BOX_MAX_X = 3.0
+        self.STOP_BOX_HALF_WIDTH = 0.6  # robot half-width plus margin
+        self.MIN_OBSTACLE_CELLS = 3  # reject single-point LiDAR noise
+
         self.previous_twist = Twist()
 
         self.create_timer(0.1, self.updateTrajectorySimply)
@@ -144,6 +154,30 @@ class PlannerNode(Node):
 
         self.total_cost_map = arr
         self.grid_info = msg.info
+
+    def occCb(self, msg: OccupancyGrid):
+        self.occ_map = np.asarray(msg.data).reshape(msg.info.height, msg.info.width)
+        self.occ_info = msg.info
+
+    def isObstacleAhead(self) -> bool:
+        """True if enough occupied cells sit in a box directly ahead of the robot."""
+        if self.occ_map is None or self.occ_info is None:
+            return False
+
+        res = self.occ_info.resolution
+        ox = self.occ_info.origin.position.x
+        oy = self.occ_info.origin.position.y
+        height, width = self.occ_map.shape
+
+        # round, not truncate: (0.6 - -10.0) / 0.2 is 52.99999... in floating point,
+        # and int() would silently drop the far row of the box.
+        col_lo = int(np.clip(round((self.STOP_BOX_MIN_X - ox) / res), 0, width))
+        col_hi = int(np.clip(round((self.STOP_BOX_MAX_X - ox) / res), 0, width))
+        row_lo = int(np.clip(round((-self.STOP_BOX_HALF_WIDTH - oy) / res), 0, height))
+        row_hi = int(np.clip(round((self.STOP_BOX_HALF_WIDTH - oy) / res), 0, height))
+
+        patch = self.occ_map[row_lo:row_hi, col_lo:col_hi]
+        return int(np.count_nonzero(patch >= 50)) >= self.MIN_OBSTACLE_CELLS
 
     def generateCandidates(self, top_speed=1.5, time_horizon=5.0, dt=0.5):
 
@@ -572,6 +606,11 @@ class PlannerNode(Node):
         if self.remaining_seedling_count < 1:
             self.publishStatus("Plan complete.")
             self.twist_pub.publish(self.getSmoothed(Twist()))
+            return
+
+        if self.isObstacleAhead():
+            self.twist_pub.publish(self.getSmoothed(Twist()))
+            self.publishStatus("Stopped: obstacle ahead", DiagnosticStatus.WARN)
             return
 
         goal_point = self.closest_point_bl
