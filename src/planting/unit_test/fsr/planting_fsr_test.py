@@ -50,9 +50,9 @@ import serial
 # ═══════════════════════════════════════════════════════════════════════════
 
 # ── Hardware / connection ──────────────────────────────────────────────────
-PORT        = '/dev/ttyACM0'  # Arduino running planting_arduino.ino  (--port)
+PORT        = '/dev/ttyACM1'  # Arduino running planting_arduino.ino  (--port)
 BAUD        = 115200          # must match its Serial.begin()         (--baud)
-CAN_CHANNEL = 'can1'          # SocketCAN iface; Kvaser Leaf often enumerates
+CAN_CHANNEL = 'can0'          # SocketCAN iface; Kvaser Leaf often enumerates
                               # as can0 — check `ip link show`  (--can-channel)
 CAN_BITRATE = 125000          # LINAK bus bitrate                  (--bitrate)
 NODE_ID     = 0x20            # LINAK 1 (auger) CANopen node id    (--node-id)

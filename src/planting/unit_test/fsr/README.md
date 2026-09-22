@@ -1,4 +1,65 @@
 # Auger Drilling Force Test (FSR)
+Cteamj@ubuntu:~/dev/ros2_ws/src/canopy/src/planting/unit_test/can_tests$ python can_tests.py 
+Setting actuator consumer heartbeat time to 100 ms...
+Transfer aborted by client with code 0x05040000
+Traceback (most recent call last):
+  File "/home/teamj/.local/lib/python3.10/site-packages/canopen/sdo/client.py", line 76, in read_response
+    response = self.responses.get(
+  File "/usr/lib/python3.10/queue.py", line 179, in get
+    raise Empty
+_queue.Empty
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/teamj/dev/ros2_ws/src/canopy/src/planting/unit_test/can_tests/can_tests.py", line 88, in <module>
+    node.sdo[0x1016][1].raw = (0x01 << 16) + 100  # 0x00010064
+  File "/home/teamj/.local/lib/python3.10/site-packages/canopen/variable.py", line 90, in raw
+    self.data = self.od.encode_raw(value)
+  File "/home/teamj/.local/lib/python3.10/site-packages/canopen/variable.py", line 46, in data
+    self.set_data(data)
+  File "/home/teamj/.local/lib/python3.10/site-packages/canopen/sdo/base.py", line 155, in set_data
+    self.sdo_node.download(self.od.index, self.od.subindex, data, force_segment)
+  File "/home/teamj/.local/lib/python3.10/site-packages/canopen/sdo/client.py", line 167, in download
+    with self.open(index, subindex, "wb", buffering=7, size=len(data),
+  File "/home/teamj/.local/lib/python3.10/site-packages/canopen/sdo/client.py", line 400, in write
+    response = self.sdo_client.request_response(request)
+  File "/home/teamj/.local/lib/python3.10/site-packages/canopen/sdo/client.py", line 95, in request_response
+    return self.read_response()
+  File "/home/teamj/.local/lib/python3.10/site-packages/canopen/sdo/client.py", line 79, in read_response
+    raise SdoCommunicationError("No SDO response received")
+canopen.sdo.exceptions.SdoCommunicationError: No SDO response received
+teamj@ubuntu:~/dev/ros2_ws/src/canopy/src/planting/unit_test/can_tests$ 
+
+
+
+
+teamj@ubuntu:~/dev/ros2_ws/src/canopy/src/planting/unit_test/fsr$ candump can0
+^Cteamj@ubuntu:~/dev/ros2_ws/src/canopy/src/planting/unit_test/fsr$ python3 planting_fsr_test.py --can-channel can0 --drill-cm 3 --dwell 2 --rpm 3
+Logging FSR to /home/teamj/dev/ros2_ws/src/canopy/src/planting/unit_test/fsr/planting_fsr_20260922_192104.csv
+Opening /dev/ttyACM1 @ 115200 baud ...
+Waiting for Arduino READY ...
+Arduino READY.
+[  1.57s] → arduino: stop
+Connecting to 'can0' @ 125000 bps ...
+← arduino: ACK:stop
+Transfer aborted by client with code 0x05040000
+❌ Error: No SDO response received
+[  2.28s] STATE → FAULT
+[  2.28s] → arduino: stop
+← arduino: ACK:stop
+Exception in thread arduino_read:
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/threading.py", line 1016, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.10/threading.py", line 953, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/teamj/dev/ros2_ws/src/canopy/src/planting/unit_test/fsr/planting_fsr_test.py", line 211, in _read_loop
+    raw = self.ser.readline()
+  File "/usr/lib/python3/dist-packages/serial/serialposix.py", line 575, in read
+    buf = os.read(self.fd, size - len(read))
+TypeError: 'NoneType' object cannot be interpreted as an integer
+Saved /home/teamj/dev/ros2_ws/src/canopy/src/planting/unit_test/fsr/planting_fsr_20260922_192104.csv
 
 Unit test that replays the drilling half of `planting_fsm.py` — auger spin-up,
 drill down, dwell, retract — while logging the FSR ground-reaction force to a
