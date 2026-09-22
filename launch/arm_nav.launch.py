@@ -8,16 +8,6 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 
 def generate_launch_description():
 
-    # planting = IncludeLaunchDescription(
-    #     PythonLaunchDescriptionSource(
-    #         os.path.join(
-    #             get_package_share_directory('planting_controller'),
-    #             'launch',
-    #             'planting_bringup.launch.py'
-    #         )
-    #     )
-    # )
-
     planting_fsm_test = Node(
         package='planting_controller',
         executable='planting_fsm_test',
@@ -35,18 +25,17 @@ def generate_launch_description():
         )
     )
 
-    # trajectory_planner = IncludeLaunchDescription(
-    #     PythonLaunchDescriptionSource(
-    #         os.path.join(
-    #             '/home/teamj/dev/ros2_ws/src/canopy/launch/',
-    #             'trajectory_planner.launch.py'
-    #         )
-    #     )
-    # )
+    trajectory_planner = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                '/home/teamj/dev/ros2_ws/src/canopy/launch/',
+                'trajectory_planner.launch.py'
+            )
+        )
+    )
 
     return LaunchDescription([
         manipulation,
-        #trajectory_planner,
-        #planting,
+        trajectory_planner,
         planting_fsm_test,
     ])

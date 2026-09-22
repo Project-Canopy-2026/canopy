@@ -29,7 +29,8 @@ setup(
 	entry_points={
    	 'console_scripts': [
        	 'planner_node = manipulation_pkg.planner_node:main',
-         'deterministic_planner_node = manipulation_pkg.deterministic_planner_node_0413:main'
+         'deterministic_planner_node = manipulation_pkg.deterministic_planner_node_0413:main',
+         'multi_seedling_planner_node = manipulation_pkg.deterministic_planner_node_multi_seedling:main'
    	 ],
     },
 

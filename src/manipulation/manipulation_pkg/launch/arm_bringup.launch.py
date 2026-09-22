@@ -70,6 +70,20 @@ def generate_launch_description():
         ]
     )
 
+    # picks 5 seedlings in sequence, one per /behavior/do_planting command
+    multi_seedling_planner_node = TimerAction(
+        period=15.0,
+        actions=[
+            Node(
+                package='manipulation_pkg',
+                executable='multi_seedling_planner_node',
+                name='manipulation_planner',
+                output='screen',
+                parameters=[{'sim_mode': False}],
+            )
+        ]
+    )
+
     # perception_node = IncludeLaunchDescription(
     #     PythonLaunchDescriptionSource(
     #         os.path.join(
@@ -105,6 +119,7 @@ def generate_launch_description():
         xarm_launch,
         gripper_node,
         # planner_node,
-        deterministic_planner_node,
+        # deterministic_planner_node,
+        multi_seedling_planner_node,
         #perception_node,
     ])
