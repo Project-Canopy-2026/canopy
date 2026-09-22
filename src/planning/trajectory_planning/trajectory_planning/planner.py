@@ -86,10 +86,26 @@ class PlannerNode(Node):
 
         self.get_logger().info("Hello, world!")
 
+        # Point-turn thresholds, with hysteresis. A single threshold made the
+        # controller chatter between the point-turn branch and the proportional
+        # branch every time GPS heading noise nudged the yaw error across it.
+        self.POINT_TURN_ENTER_YAW_ERROR = np.pi / 6  # 30 degrees
+        self.POINT_TURN_EXIT_YAW_ERROR = np.pi / 12  # 15 degrees
+
+        # Yaw error at which a point turn commands its full omega. Errors below
+        # this scale down proportionally so the two branches meet continuously.
+        self.POINT_TURN_SATURATION_YAW_ERROR = np.pi / 2  # 90 degrees
+
+        # Ignore yaw errors smaller than this while driving, so heading noise
+        # does not command steering at all.
+        self.YAW_ERROR_DEADBAND = np.pi / 36  # 5 degrees
+
         self.goal_point = None
         self.ego_pos = None
         self.ego_yaw = None
+        # Never populated: the /odometry/filtered subscriber is commented out.
         self.ego_linear_vel = 0.0
+        self.is_point_turning = False
         self.seedling_points = []
         self.total_cost_map = None
         self.grid_info = None
@@ -483,13 +499,24 @@ class PlannerNode(Node):
 
         return yaw_error
 
-    def pointTurnFromYawError(self, yaw_error, omega=0.8, linear=0.2):
+    def pointTurnFromYawError(self, yaw_error, omega=0.8, linear=0.2, min_omega=0.25):
+        """Turn toward the goal, scaling omega with the size of the error.
+
+        ``omega`` is a ceiling, not the command. This used to be bang-bang: a
+        23 degree error and a 180 degree error both produced the full omega, so
+        crossing the point-turn threshold flipped the command between +/-omega
+        and made the robot weave while driving. ``min_omega`` keeps small
+        corrections above the drivetrain's stiction.
+        """
         cmd_msg = Twist()
 
-        if yaw_error < 0:
-            omega *= -1
+        scale = min(abs(yaw_error) / self.POINT_TURN_SATURATION_YAW_ERROR, 1.0)
+        target_omega = max(omega * scale, min_omega)
 
-        cmd_msg.angular.z = omega
+        if yaw_error < 0:
+            target_omega *= -1
+
+        cmd_msg.angular.z = target_omega
         cmd_msg.linear.x = linear
 
         self.twist_pub.publish(self.getSmoothed(cmd_msg))
@@ -547,7 +574,8 @@ class PlannerNode(Node):
                 self.facing_downhill_pub.publish(Empty())
                 return
 
-            self.pointTurnFromYawError(yaw_error, omega=1.2, linear=0.8)
+            # Low linear speed while spinning: see pointTurnFromYawError.
+            self.pointTurnFromYawError(yaw_error, omega=1.2, linear=0.3)
             return
 
         if self.is_planting:
@@ -578,29 +606,46 @@ class PlannerNode(Node):
         distance_remaining = np.linalg.norm(goal_point)
         yaw_error = self.getYawError(goal_point)
 
-        POINT_TURN_YAW_ERROR_THRESHOLD = np.pi / 8  # 22.5 degrees
-        if abs(yaw_error) > POINT_TURN_YAW_ERROR_THRESHOLD:
+        # Wider threshold to enter a point turn than to leave one, so noise
+        # around the boundary cannot toggle us between the two branches.
+        point_turn_threshold = (
+            self.POINT_TURN_EXIT_YAW_ERROR
+            if self.is_point_turning
+            else self.POINT_TURN_ENTER_YAW_ERROR
+        )
+
+        if abs(yaw_error) > point_turn_threshold:
+            self.is_point_turning = True
             direction_string = "left" if yaw_error > 0 else "right"
             self.publishStatus(f"Turning {direction_string} toward seedling")
-            self.pointTurnFromYawError(yaw_error, omega=1.2, linear=0.8)
+            # Keep linear speed low while turning hard: GNSS track is course
+            # over ground, so driving fast through a turn corrupts the very
+            # heading this controller steers on.
+            self.pointTurnFromYawError(yaw_error, omega=1.2, linear=0.3)
             return
 
+        self.is_point_turning = False
+
         Kp_angular = 1.0
-        target_angular = yaw_error * Kp_angular
+        if abs(yaw_error) < self.YAW_ERROR_DEADBAND:
+            target_angular = 0.0
+        else:
+            target_angular = yaw_error * Kp_angular
 
         SPEED_LIMIT = 0.6  # m/s
         Kp_linear = 0.25
-        Kp_vel = 0.5  # velocity feedback gain
-        desired_speed = min(distance_remaining * Kp_linear, SPEED_LIMIT)
-        vel_error = desired_speed - self.ego_linear_vel
-        target_speed = max(0.0, min(desired_speed + Kp_vel * vel_error, SPEED_LIMIT))
+        # No velocity feedback: ego_linear_vel is never populated, so the old
+        # `desired + Kp_vel * (desired - ego_linear_vel)` term was just an
+        # open-loop 1.5x on the commanded speed.
+        target_speed = max(0.0, min(distance_remaining * Kp_linear, SPEED_LIMIT))
 
         cmd_msg = Twist()
         cmd_msg.linear.x = target_speed
         cmd_msg.angular.z = target_angular
         self.twist_pub.publish(self.getSmoothed(cmd_msg))
         self.publishStatus(
-            f"Driving {target_speed:.2} m/s (actual {self.ego_linear_vel:.2}), {distance_remaining:.2}m away"
+            f"Driving {target_speed:.2} m/s, {distance_remaining:.2}m away, "
+            f"yaw error {np.degrees(yaw_error):.1f} deg"
         )
 
     def publishAssistedTwist(self):
@@ -644,7 +689,8 @@ class PlannerNode(Node):
                 self.facing_downhill_pub.publish(Empty())
                 return
 
-            self.pointTurnFromYawError(yaw_error, omega=1.2, linear=0.8)
+            # Low linear speed while spinning: see pointTurnFromYawError.
+            self.pointTurnFromYawError(yaw_error, omega=1.2, linear=0.3)
             return
 
         if self.is_planting:

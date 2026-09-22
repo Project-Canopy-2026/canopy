@@ -36,6 +36,10 @@ class gnss_interface(Node):
 
         self.create_subscription(GPSFix, "/gps/gpsfix", self.gpsFix_cb, 10)
 
+        self.heading_min_speed_mps = self.get_parameter("heading_min_speed_mps").value
+        self.heading_filter_alpha = self.get_parameter("heading_filter_alpha").value
+        self.filtered_yaw = None
+
         lat0, lon0, alt0 = self.get_parameter("map_origin_lat_lon_alt_degrees").value
         self.origin_utm_x, self.origin_utm_y, self.origin_zone_num, self.origin_zone_letter = utm.from_latlon(lat0, lon0)
 
@@ -52,7 +56,17 @@ class gnss_interface(Node):
         gps_x = gps_utm_x - self.origin_utm_x
         gps_y = gps_utm_y - self.origin_utm_y
 
-        yaw = self.trueTrackToEnuRads(msg.track)
+        yaw = self.updateHeading(msg)
+
+        if yaw is None:
+            self.get_logger().warn(
+                "No usable heading yet: course over ground needs "
+                f"{self.heading_min_speed_mps} m/s to be trustworthy. "
+                "Not publishing pose.",
+                throttle_duration_sec=2.0,
+            )
+            return
+
         q = R.from_euler("xyz", [0.0, 0.0, yaw]).as_quat()
 
         # Publish GPS-derived odometry (map frame, base_link child)
@@ -116,6 +130,39 @@ class gnss_interface(Node):
         self.tf_broadcaster.sendTransform(tf_msg)
 
 
+    def updateHeading(self, msg: GPSFix):
+        """Low-pass the GNSS course over ground into a usable heading.
+
+        GPSFix.track is the direction of travel, not the body heading, and the
+        Swift driver freezes it below its own track_update_min_speed_mps. Taken
+        raw it is noisy enough that the trajectory planner's yaw error jitters
+        across its point-turn threshold and the robot weaves while driving
+        straight. Below the speed gate we hold the last good heading rather
+        than tracking noise; returns None until a trustworthy fix arrives.
+        """
+        raw_yaw = self.trueTrackToEnuRads(msg.track)
+
+        if math.isnan(raw_yaw) or math.isnan(msg.speed):
+            return self.filtered_yaw
+
+        if msg.speed < self.heading_min_speed_mps:
+            return self.filtered_yaw
+
+        if self.filtered_yaw is None:
+            self.filtered_yaw = raw_yaw
+            return self.filtered_yaw
+
+        # Blend along the shortest arc, so the filter does not swing the long
+        # way around whenever the heading crosses the wrap point.
+        error = raw_yaw - self.filtered_yaw
+        error = math.atan2(math.sin(error), math.cos(error))
+
+        self.filtered_yaw = (
+            self.filtered_yaw + self.heading_filter_alpha * error
+        ) % (2 * math.pi)
+
+        return self.filtered_yaw
+
     def trueTrackToEnuRads(self, track_deg: float):
         enu_yaw = track_deg
 
@@ -136,6 +183,15 @@ class gnss_interface(Node):
             "map_origin_lat_lon_alt_degrees",
             [40.44132949798969, -79.94451105594635, 293.0],
         )
+
+        # Speed below which course over ground is not trusted as a heading.
+        # Keep this above the driver's track_update_min_speed_mps (0.2 m/s),
+        # where the receiver itself stops updating track.
+        self.declare_parameter("heading_min_speed_mps", 0.3)
+
+        # Low-pass weight on each new heading measurement. Smaller is smoother
+        # but lags harder through turns.
+        self.declare_parameter("heading_filter_alpha", 0.3)
 
 def main(args=None):
     rclpy.init(args=args)
