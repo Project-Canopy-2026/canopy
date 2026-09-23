@@ -44,6 +44,31 @@ import time
 import canopen
 import serial
 
+# ═══════════════════════════════════════════════════════════════════════════
+#  TEST SETTINGS — edit these, or override any of them on the command line.
+#  Every one is the default for the matching --flag (see main()).
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ── Hardware / connection ──────────────────────────────────────────────────
+PORT        = '/dev/ttyACM0'  # Arduino running planting_arduino.ino  (--port)
+BAUD        = 115200          # must match its Serial.begin()         (--baud)
+CAN_CHANNEL = 'can1'          # SocketCAN iface; Kvaser Leaf often enumerates
+                              # as can0 — check `ip link show`  (--can-channel)
+CAN_BITRATE = 125000          # LINAK bus bitrate                  (--bitrate)
+NODE_ID     = 0x20            # LINAK 1 (auger) CANopen node id    (--node-id)
+HB_PERIOD_MS = 100            # master heartbeat period              (--hb-ms)
+
+# ── Motion ─────────────────────────────────────────────────────────────────
+AUGER_RPM   = 75      # BLDC rated speed                              (--rpm)
+DRILL_CM    = 12.0    # extend distance, driven at SLOW (0x64)   (--drill-cm)
+RETRACT_CM  = 12.0    # retract distance, driven at FAST (0xCD) (--retract-cm)
+DWELL_S     = 5.0     # auger spins in the soil at depth             (--dwell)
+SPIN_UP_S   = 1.0     # settle time after starting the auger       (--spin-up)
+TAIL_S      = 2.0     # keep logging after the sequence ends          (--tail)
+
+# ── Logging ────────────────────────────────────────────────────────────────
+FSR_HZ      = 10.0    # how often to poll the Arduino for force     (--fsr-hz)
+
 # ── LINAK PDO codes / geometry (see linak_can_node.py, LINAK manual p.11) ─────
 CMD_OUT   = 64257   # run out  (extend / down)
 CMD_IN    = 64258   # run in   (retract / up)
@@ -61,6 +86,11 @@ SPEED_HALF = 0x64   # ~1.09 cm/s  (SLOW)
 _POS_EPSILON      = 5      # counts — "not moving"
 _TARGET_TOLERANCE = 3000   # counts ≈ 1.4 cm — overshoot allowance on STOP
 _STABLE_COUNT     = 4      # ~1 s of no movement → homing done
+_STALL_S          = 1.0    # seconds of no movement before a move is called
+                           # stalled (hard stop / jammed auger)
+_MOVE_START_S     = 3.0    # grace period for motion to begin before the
+                           # command is re-sent — stall detection stays
+                           # disarmed until the actuator has actually moved
 
 HB_COB = 0x701  # master heartbeat COB-ID the actuator's 0x1016 entry expects
 
@@ -257,6 +287,11 @@ class LinakChannel:
         with self._pos_lock:
             return self._pos
 
+    def _settled_position(self, fallback: int) -> int:
+        """Latest TPDO position, falling back to the caller's last good read."""
+        pos = self.position()
+        return fallback if pos is None else pos
+
     def send(self, code: int, speed: int = SPEED_HALF) -> None:
         self._net.send_message(self.cob_rpdo1, _rpdo(code, speed))
 
@@ -309,10 +344,19 @@ class LinakChannel:
         raise TimeoutError(f'IN_MAX homing timed out after {timeout_s} s')
 
     def move_distance(self, direction: int, distance_cm: float,
-                      speed: int, timeout_s: float = 60.0) -> None:
+                      speed: int, timeout_s: float = 60.0,
+                      floor_pos: int = None) -> tuple:
         """
         Extend/retract distance_cm from the live TPDO position, stopping at
         the computed target — or earlier if the actuator stalls on a hard stop.
+
+        floor_pos (retract only) clamps the target so the move can never travel
+        further in than that position. Pass the position the drill started from
+        and a retract can never overshoot back past it, however short the
+        drill-down actually got.
+
+        Returns (start_pos, end_pos) so the caller can see how far it really
+        travelled — a stalled drill travels less than it was asked to.
         """
         poll = 0.1
         waited, start = 0.0, self.position()
@@ -329,6 +373,10 @@ class LinakChannel:
             reached = lambda p: p >= target - _TARGET_TOLERANCE
         else:
             target  = max(start - delta, POS_IN_MAX)
+            if floor_pos is not None:
+                # Never travel further in than the caller's floor, whatever
+                # distance was asked for.
+                target = max(target, floor_pos)
             reached = lambda p: p <= target + _TARGET_TOLERANCE
 
         print(f'  move {start} → {target} ({distance_cm:.2f} cm, '
@@ -336,6 +384,8 @@ class LinakChannel:
         self.send(direction, speed)
 
         elapsed, last_moving, stalls = 0.0, start, 0
+        moving = False   # stall detection stays disarmed until it has moved
+        resent = False
         while elapsed < timeout_s:
             time.sleep(poll)
             elapsed += poll
@@ -343,19 +393,37 @@ class LinakChannel:
             if pos is None:
                 continue
 
+            # Reaching the target always wins, and is checked before anything
+            # else: the actuator is stopped here and the move returns
+            # immediately, so sitting still afterwards can never be counted as
+            # a stall no matter how long it rests.
             if reached(pos):
                 self.send(CMD_STOP)
                 print(f'  target reached at pos={pos}')
-                return
+                return start, self._settled_position(pos)
 
             if abs(pos - last_moving) > _POS_EPSILON:
                 last_moving, stalls = pos, 0
-            else:
+                moving = True
+            elif moving:
                 stalls += 1
-            if stalls >= 10:   # ~1 s without motion → hard stop
+            elif elapsed >= _MOVE_START_S:
+                # Still hasn't budged. A post-CLEAR/STOP settle can swallow the
+                # first RPDO, so re-send once before giving up — same recovery
+                # home_in_max() uses. Not a stall: it never started.
+                if not resent:
+                    print('  no motion yet — re-sending command')
+                    self.send(direction, speed)
+                    resent, elapsed = True, 0.0
+                else:
+                    self.send(CMD_STOP)
+                    print(f'  never started moving from pos={pos} — aborting')
+                    return start, pos
+
+            if stalls >= int(_STALL_S / poll):   # stopped mid-travel → hard stop
                 self.send(CMD_STOP)
                 print(f'  stalled at pos={pos} (target {target}) — treating as done')
-                return
+                return start, self._settled_position(pos)
 
         self.send(CMD_STOP)
         raise TimeoutError(f'distance move timed out after {timeout_s} s')
@@ -375,7 +443,9 @@ def run_sequence(args, log: RunLog, ard: ArduinoLink, linak: LinakChannel) -> No
     time.sleep(args.spin_up)
 
     log.set_state('DRILLING_DOWN')
-    linak.move_distance(CMD_OUT, args.drill_cm, SPEED_HALF)
+    drill_start, drill_end = linak.move_distance(CMD_OUT, args.drill_cm, SPEED_HALF)
+    travelled_cm = abs(drill_end - drill_start) / COUNTS_PER_CM
+    print(f'  drilled {travelled_cm:.2f} cm of {args.drill_cm:.2f} cm commanded')
 
     log.set_state('DRILLING_DWELL')
     print(f'  dwelling {args.dwell} s with auger spinning ...')
@@ -383,7 +453,15 @@ def run_sequence(args, log: RunLog, ard: ArduinoLink, linak: LinakChannel) -> No
 
     log.set_state('AUGER_RETRACT')
     ard.send(f'bldc,in,{args.rpm}')          # FSM re-asserts the spin command
-    linak.move_distance(CMD_IN, args.retract_cm, SPEED_FULL)
+    # Retract only as far as the drill actually went. If the auger stalled on a
+    # rock at 5 cm, retracting the commanded 12 cm would drive the carriage past
+    # where it started and into whatever is mounted above the LINAK. floor_pos
+    # enforces the same limit on position, in case travel and counts disagree.
+    retract_cm = min(args.retract_cm, travelled_cm)
+    if retract_cm < args.retract_cm:
+        print(f'  LIMITING retract to {retract_cm:.2f} cm '
+              f'(drill only travelled that far; {args.retract_cm:.2f} cm requested)')
+    linak.move_distance(CMD_IN, retract_cm, SPEED_FULL, floor_pos=drill_start)
 
     log.set_state('COMPLETE')
     ard.send('bldc,stop')
@@ -397,29 +475,35 @@ def main() -> None:
 
     p = argparse.ArgumentParser(
         description='Auger + LINAK drilling unit test with FSR logging.')
-    p.add_argument('--port', default='/dev/ttyACM0',
-                   help='Arduino serial port (default /dev/ttyACM0)')
-    p.add_argument('--baud', type=int, default=115200,
-                   help='Arduino baud rate (default 115200, matches planting_arduino.ino)')
-    p.add_argument('--can-channel', default='can1', help='SocketCAN interface (default can1)')
-    p.add_argument('--bitrate', type=int, default=125000, help='CAN bitrate (default 125000)')
-    p.add_argument('--node-id', type=lambda s: int(s, 0), default=0x20,
-                   help='LINAK 1 (auger) CANopen node id (default 0x20)')
+    p.add_argument('--port', default=PORT,
+                   help=f'Arduino serial port (default {PORT})')
+    p.add_argument('--baud', type=int, default=BAUD,
+                   help=f'Arduino baud rate (default {BAUD}, matches planting_arduino.ino)')
+    p.add_argument('--can-channel', default=CAN_CHANNEL,
+                   help=f'SocketCAN interface (default {CAN_CHANNEL})')
+    p.add_argument('--bitrate', type=int, default=CAN_BITRATE,
+                   help=f'CAN bitrate (default {CAN_BITRATE})')
+    p.add_argument('--node-id', type=lambda s: int(s, 0), default=NODE_ID,
+                   help=f'LINAK 1 (auger) CANopen node id (default 0x{NODE_ID:02X})')
     p.add_argument('--eds', default=os.path.normpath(default_eds), help='Path to the LINAK EDS file')
-    p.add_argument('--hb-ms', type=int, default=100, help='Master heartbeat period ms (default 100)')
+    p.add_argument('--hb-ms', type=int, default=HB_PERIOD_MS,
+                   help=f'Master heartbeat period ms (default {HB_PERIOD_MS})')
 
-    p.add_argument('--rpm', type=int, default=75, help='Auger RPM (default 75)')
-    p.add_argument('--drill-cm', type=float, default=12.0,
-                   help='Drill-down distance in cm (default 12)')
-    p.add_argument('--retract-cm', type=float, default=12.0,
-                   help='Retract distance in cm (default 12)')
-    p.add_argument('--dwell', type=float, default=5.0, help='Dwell in soil, s (default 5)')
-    p.add_argument('--spin-up', type=float, default=1.0,
-                   help='Settle time after starting the auger, s (default 1)')
-    p.add_argument('--tail', type=float, default=2.0,
-                   help='Extra logging time after the sequence, s (default 2)')
+    p.add_argument('--rpm', type=int, default=AUGER_RPM,
+                   help=f'Auger RPM (default {AUGER_RPM})')
+    p.add_argument('--drill-cm', type=float, default=DRILL_CM,
+                   help=f'Drill-down distance in cm (default {DRILL_CM:g})')
+    p.add_argument('--retract-cm', type=float, default=RETRACT_CM,
+                   help=f'Retract distance in cm (default {RETRACT_CM:g})')
+    p.add_argument('--dwell', type=float, default=DWELL_S,
+                   help=f'Dwell in soil, s (default {DWELL_S:g})')
+    p.add_argument('--spin-up', type=float, default=SPIN_UP_S,
+                   help=f'Settle time after starting the auger, s (default {SPIN_UP_S:g})')
+    p.add_argument('--tail', type=float, default=TAIL_S,
+                   help=f'Extra logging time after the sequence, s (default {TAIL_S:g})')
 
-    p.add_argument('--fsr-hz', type=float, default=10.0, help='FSR sample rate (default 10 Hz)')
+    p.add_argument('--fsr-hz', type=float, default=FSR_HZ,
+                   help=f'FSR sample rate (default {FSR_HZ:g} Hz)')
     p.add_argument('--out', help='Output CSV (default planting_fsr_<timestamp>.csv)')
     p.add_argument('--no-home', action='store_true',
                    help='Skip the LINAK_HOME retract-to-IN_MAX step')
