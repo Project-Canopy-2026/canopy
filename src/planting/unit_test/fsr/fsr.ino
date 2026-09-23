@@ -1,14 +1,18 @@
-// Testing FSR 400 Series force sensor (Interlink 34-00065, Model 404 Single Zone Donut)
-// Datasheet ref: src/planting/unit_test/Datasheet_FSR.pdf
+// Testing FSR UX force sensor (Interlink 34-00153, strip form factor)
+// Datasheet ref: src/planting/unit_test/fsr/DataSheet_FSR UX.pdf
+// Sensing range 0.5N-150N (no-load resistance >10 Mohm). No Force-vs-
+// Resistance/Vout curve is published for this sensor, so this reports
+// raw voltage/resistance only — do not convert to force without first
+// building a calibration table from known weights on the actual mount.
 // Measures vertical ground-reaction force on the auger while drilling.
 //
 // Wiring (voltage divider, output rises with force):
-//   5V --[FSR]--+--[10k RM]-- GND
+//   5V --[FSR]--+--[5k RM]-- GND
 //               |
 //               A0
 
 const int FSR_PIN = A0;
-const float RM = 10000.0;   // measuring resistor, ohms
+const float RM = 5000.0;   // measuring resistor, ohms
 const float VCC = 5.0;
 const float ADC_MAX = 1023.0;
 
@@ -33,21 +37,16 @@ float voltageToResistance(float voltage)
     return RM * (VCC / voltage - 1.0);
 }
 
-// ROUGH, UNCALIBRATED placeholder: fit to two points eyeballed off the
-// datasheet's generic resistance-vs-force curve (~100g->10k ohm, ~1000g->1k ohm),
-// which gives Force(g) ~= 1e6 / Rfsr. That curve is for a generic FSR in this
-// circuit, not this exact part/mount, so treat this as relative-pressure only
-// until it's calibrated against known weights on the actual mounted sensor.
-float resistanceToForceGrams(float rfsr)
-{
-    if (rfsr <= 0) return 0;
-    return 1000000.0 / rfsr;
-}
+const unsigned long LOG_INTERVAL_MS = 100;
 
 void setup()
 {
     Serial.begin(9600);
-    Serial.println("FSR test — reading A0 (uncalibrated grams estimate)");
+    // CSV log: time_ms,voltage_V,resistance_ohm (resistance is -1 when OPEN,
+    // i.e. no measurable force, so the column stays numeric for plotting).
+    // Compatible with Arduino IDE's Serial Plotter (Tools > Serial Plotter),
+    // or capture straight to a file with plotting/log_fsr.py.
+    Serial.println("time_ms,voltage_V,resistance_ohm");
 }
 
 void loop()
@@ -55,21 +54,11 @@ void loop()
     float voltage = readFSRVoltage();
     float rfsr = voltageToResistance(voltage);
 
-    Serial.print("V=");
+    Serial.print(millis());
+    Serial.print(",");
     Serial.print(voltage, 3);
-    Serial.print("  R=");
-    if (rfsr < 0)
-    {
-        Serial.print("OPEN");
-        Serial.print("  grams~=0");
-    }
-    else
-    {
-        Serial.print(rfsr, 0);
-        Serial.print("  grams~=");
-        Serial.print(resistanceToForceGrams(rfsr), 1);
-    }
-    Serial.println();
+    Serial.print(",");
+    Serial.println(rfsr, 0);
 
-    delay(200);
+    delay(LOG_INTERVAL_MS);
 }

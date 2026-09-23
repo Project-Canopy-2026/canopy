@@ -16,10 +16,11 @@
 //    "stop"                   → bldc_stop() + stepper_stop() immediately
 //
 //  Replies:
-//    "ACK:<cmd>"                  – command received and dispatched
-//    "DONE:STEPPER"                – step-counted stepper move completed
-//    "FSR:<voltage>,<ohms>,<grams>" – reply to "fsr,read" (grams is an uncalibrated estimate)
-//    "ERR:<reason>"                – unknown or malformed command
+//    "ACK:<cmd>"              – command received and dispatched
+//    "DONE:STEPPER"           – step-counted stepper move completed
+//    "FSR:<voltage>,<ohms>"   – reply to "fsr,read" (raw only — no force
+//                               conversion; see FSR FUNCTIONS below)
+//    "ERR:<reason>"           – unknown or malformed command
 // ============================================================
 
 // ============================================================
@@ -39,10 +40,12 @@ const float MM_PER_REV   = 5.0;  // SFU 1605 lead
 const float STEPS_PER_MM = STEPS_PER_REV / MM_PER_REV; // 160 steps/mm
 const int  STEPPER_RPM   = 270;  // locked speed
 
-// FSR (Interlink 34-00065, Model 404) — vertical ground-reaction force on the auger
-// Voltage divider, output rises with force: 5V --[FSR]--+--[10k RM]-- GND, tap at A0
+// FSR (Interlink 34-00153, FSR UX strip) — vertical ground-reaction force on the auger
+// Sensing range 0.5N-150N; no published Force-vs-Resistance curve, so this
+// reports raw voltage/resistance only until calibrated with known weights.
+// Voltage divider, output rises with force: 5V --[FSR]--+--[5k RM]-- GND, tap at A0
 const int FSR_PIN = A0;
-const float FSR_RM = 10000.0; // measuring resistor, ohms
+const float FSR_RM = 5000.0; // measuring resistor, ohms
 const float ADC_VCC = 5.0;
 const float ADC_MAX = 1023.0;
 
@@ -168,17 +171,6 @@ float voltageToResistance(float voltage)
     return FSR_RM * (ADC_VCC / voltage - 1.0);
 }
 
-// ROUGH, UNCALIBRATED placeholder: fit to two points eyeballed off the
-// datasheet's generic resistance-vs-force curve (~100g->10k ohm, ~1000g->1k ohm),
-// which gives Force(g) ~= 1e6 / Rfsr. That curve is for a generic FSR in this
-// circuit, not this exact part/mount, so treat this as relative-pressure only
-// until it's calibrated against known weights on the actual mounted sensor.
-float resistanceToForceGrams(float rfsr)
-{
-    if (rfsr <= 0) return 0;
-    return 1000000.0 / rfsr;
-}
-
 // ============================================================
 //  SERIAL COMMAND HANDLER
 // ============================================================
@@ -263,13 +255,10 @@ void handle_command(String cmd)
         {
             float voltage = readFSRVoltage();
             float rfsr = voltageToResistance(voltage);
-            float grams = (rfsr < 0) ? 0 : resistanceToForceGrams(rfsr);
             Serial.print("FSR:");
             Serial.print(voltage, 3);
             Serial.print(",");
-            Serial.print(rfsr, 0);
-            Serial.print(",");
-            Serial.println(grams, 1);
+            Serial.println(rfsr, 0);
         }
         else
         {
