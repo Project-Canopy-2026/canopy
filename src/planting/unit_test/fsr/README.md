@@ -49,7 +49,7 @@ test will fail to open it.
 ## Step 2 — Bring up the CAN interface
 
 ```bash
-sudo ip link set can0 down 2>/dev/null
+sudo ip link set can0 down
 sudo ip link set can0 up type can bitrate 125000
 ip link show can0            # should report UP
 ```

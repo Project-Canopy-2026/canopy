@@ -63,7 +63,6 @@ AUGER_RPM   = 75      # BLDC rated speed                              (--rpm)
 DRILL_CM    = 12.0    # extend distance, driven at SLOW (0x64)   (--drill-cm)
 RETRACT_CM  = 12.0    # retract distance, driven at FAST (0xCD) (--retract-cm)
 DWELL_S     = 5.0     # auger spins in the soil at depth             (--dwell)
-SPIN_UP_S   = 1.0     # settle time after starting the auger       (--spin-up)
 TAIL_S      = 2.0     # keep logging after the sequence ends          (--tail)
 
 # ── Logging ────────────────────────────────────────────────────────────────
@@ -440,7 +439,8 @@ def run_sequence(args, log: RunLog, ard: ArduinoLink, linak: LinakChannel) -> No
 
     log.set_state('AUGER_SPIN_UP')
     ard.send(f'bldc,in,{args.rpm}')
-    time.sleep(args.spin_up)
+    # planting_fsm.py transitions AUGER_SPIN_UP → DRILLING_DOWN immediately,
+    # with no settle time; this test does the same.
 
     log.set_state('DRILLING_DOWN')
     drill_start, drill_end = linak.move_distance(CMD_OUT, args.drill_cm, SPEED_HALF)
@@ -497,8 +497,6 @@ def main() -> None:
                    help=f'Retract distance in cm (default {RETRACT_CM:g})')
     p.add_argument('--dwell', type=float, default=DWELL_S,
                    help=f'Dwell in soil, s (default {DWELL_S:g})')
-    p.add_argument('--spin-up', type=float, default=SPIN_UP_S,
-                   help=f'Settle time after starting the auger, s (default {SPIN_UP_S:g})')
     p.add_argument('--tail', type=float, default=TAIL_S,
                    help=f'Extra logging time after the sequence, s (default {TAIL_S:g})')
 
