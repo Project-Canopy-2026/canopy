@@ -296,7 +296,7 @@ class OccupancyGridNode(Node):
             return float(self.declare_parameter(name, default, desc).value)
 
         self.base_link_height = float_param("base_link_height", 0.30)
-        self.min_obstacle_height = float_param("min_obstacle_height", 0.2)
+        self.min_obstacle_height = float_param("min_obstacle_height", 0.1)
         self.max_obstacle_height = float_param("max_obstacle_height", 2.0)
         self.self_filter_min_x = float_param("self_filter_min_x", -0.9)
         self.self_filter_max_x = float_param("self_filter_max_x", 0.9)
