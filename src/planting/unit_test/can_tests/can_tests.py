@@ -5,7 +5,7 @@ import time
 import threading
 
 # === Configuration ===
-CHANNEL = 'can0'
+CHANNEL = 'can1'
 NODE_ID = 0x20 # 33 for chute
 COB_ID_RPDO1 = 0x200 + NODE_ID
 COB_ID_TPDO1 = 0x180 + NODE_ID  # position feedback (object 0x2001), every 250 ms by default
@@ -81,11 +81,14 @@ node = canopen.RemoteNode(NODE_ID, eds_path)
 network.add_node(node)
 network.subscribe(COB_ID_TPDO1, on_tpdo)
 
-network.send_message(HEARTBEAT_PRODUCER_ID, [0x05])
+# === Start master heartbeat thread ===
+hb_thread = threading.Thread(target=heartbeat_loop, daemon=True)
+hb_thread.start()
+time.sleep(0.3)  # let a few heartbeats land before SDO traffic
 
 # === Set heartbeat expectation (consumer heartbeat time) ===
 print(f"Setting actuator consumer heartbeat time to {HEARTBEAT_TIME_MS} ms...")
-node.sdo[0x1016][1].raw = (0x01 << 16) + 100  # 0x00010064
+node.sdo[0x1016][1].raw = (0x01 << 16) + 500  # node 0x01, 500 ms timeout
 time.sleep(0.1)
 
 rpdo = node.rpdo[1]
@@ -110,8 +113,8 @@ send_actuator_command(64256)
 time.sleep(1)
 
 # === GO DOWN (extend) to position 500, printing position feedback ===
-print("⬇️  DOWN to 500...")
-send_actuator_command(150)
+print("Moving...")
+send_actuator_command(10)
 monitor(10)
 # # === RUN OUT ===
 # print("⬆️  RUN OUT...")
@@ -123,10 +126,10 @@ monitor(10)
 # send_actuator_command(64259)
 # time.sleep(1)
 
-# === RUN IN ===
-print("⬇️  RUN IN...")
-send_actuator_command(150)
-monitor(10)
+# # === RUN IN ===
+# print("⬇️  RUN IN...")
+# send_actuator_command(10)
+# monitor(10)
 
 # # === Final STOP ===
 # print("Final STOP...")

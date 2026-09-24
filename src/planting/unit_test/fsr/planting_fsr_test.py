@@ -60,7 +60,7 @@ HB_PERIOD_MS = 100            # master heartbeat period              (--hb-ms)
 
 # ── Motion ─────────────────────────────────────────────────────────────────
 AUGER_RPM   = 75      # BLDC rated speed                              (--rpm)
-DRILL_CM    = 3.0    # extend distance, driven at SLOW (0x64)   (--drill-cm)
+DRILL_CM    = 28.0    # extend distance, driven at SLOW (0x64)   (--drill-cm)
 RETRACT_CM  = 3.0    # retract distance, driven at FAST (0xCD) (--retract-cm)
 DWELL_S     = 5.0     # auger spins in the soil at depth             (--dwell)
 TAIL_S      = 2.0     # keep logging after the sequence ends          (--tail)
@@ -400,7 +400,7 @@ def run_sequence(args, log: RunLog, ard: ArduinoLink, linak: LinakChannel) -> No
     target_counts = int(round(args.drill_cm * COUNTS_PER_CM))
     print(f'  drilling to {target_counts} counts ({args.drill_cm:.1f} cm) at HALF speed')
     linak.send_command(target_counts, SPEED_HALF)
-    linak.monitor(20)
+    linak.monitor(30)
 
     log.set_state('DRILLING_DWELL')
     print(f'  dwelling {args.dwell} s with auger spinning ...')
@@ -411,7 +411,7 @@ def run_sequence(args, log: RunLog, ard: ArduinoLink, linak: LinakChannel) -> No
     print(f'  retracting to {POS_IN_MAX} counts at FULL speed')
     linak.send_command(POS_IN_MAX, SPEED_FULL)
     # ard.send('bldc,stop')
-    linak.monitor(15)
+    linak.monitor(20)
 
     log.set_state('COMPLETE')
     ard.send('bldc,stop')
