@@ -110,9 +110,9 @@ test will fail to open it.
 ## Step 2 — Bring up the CAN interface
 
 ```bash
-sudo ip link set can0 down
-sudo ip link set can0 up type can bitrate 125000
-ip link show can0            # should report UP
+sudo ip link set can1 down
+sudo ip link set can1 up type can bitrate 125000
+ip link show can1            # should report UP
 ```
 
 Check the interface name first with `ip link show` — a single-channel Kvaser
@@ -123,7 +123,7 @@ presents the adapter as a normal SocketCAN interface.
 Confirm the actuator is talking before going further:
 
 ```bash
-candump can0                 # expect 0x1A0 frames roughly every 250 ms
+candump can1                 # expect 0x1A0 frames roughly every 250 ms
 ```
 
 ## Step 3 — Check the serial port
@@ -163,13 +163,13 @@ confirms CAN init, the Arduino `READY` handshake, direction sense, and that
 
 ```bash
 cd src/planting/unit_test/fsr
-python3 planting_fsr_test.py --can-channel can0 --drill-cm 3 --dwell 2 --rpm 30
+python3 planting_fsr_test.py --can-channel can1 --drill-cm 3 --dwell 2 --rpm 30
 ```
 
 ## Step 5 — Real run
 
 ```bash
-python3 planting_fsr_test.py --can-channel can0 --drill-cm 12 --retract-cm 12 --dwell 5 --rpm 75
+python3 planting_fsr_test.py --can-channel can1 --drill-cm 12 --retract-cm 12 --dwell 5 --rpm 75
 ```
 
 **Ctrl+C aborts safely at any point** — the auger and actuator are stopped, the

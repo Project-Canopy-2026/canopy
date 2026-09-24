@@ -52,7 +52,7 @@ import serial
 # ── Hardware / connection ──────────────────────────────────────────────────
 PORT        = '/dev/ttyACM1'  # Arduino running planting_arduino.ino  (--port)
 BAUD        = 115200          # must match its Serial.begin()         (--baud)
-CAN_CHANNEL = 'can0'          # SocketCAN iface; Kvaser Leaf often enumerates
+CAN_CHANNEL = 'can1'          # SocketCAN iface; Kvaser Leaf often enumerates
                               # as can0 — check `ip link show`  (--can-channel)
 CAN_BITRATE = 125000          # LINAK bus bitrate                  (--bitrate)
 NODE_ID     = 0x20            # LINAK 1 (auger) CANopen node id    (--node-id)
@@ -60,8 +60,8 @@ HB_PERIOD_MS = 100            # master heartbeat period              (--hb-ms)
 
 # ── Motion ─────────────────────────────────────────────────────────────────
 AUGER_RPM   = 75      # BLDC rated speed                              (--rpm)
-DRILL_CM    = 12.0    # extend distance, driven at SLOW (0x64)   (--drill-cm)
-RETRACT_CM  = 12.0    # retract distance, driven at FAST (0xCD) (--retract-cm)
+DRILL_CM    = 3.0    # extend distance, driven at SLOW (0x64)   (--drill-cm)
+RETRACT_CM  = 3.0    # retract distance, driven at FAST (0xCD) (--retract-cm)
 DWELL_S     = 5.0     # auger spins in the soil at depth             (--dwell)
 TAIL_S      = 2.0     # keep logging after the sequence ends          (--tail)
 
@@ -75,34 +75,15 @@ CMD_STOP  = 64259
 CMD_CLEAR = 64256
 
 POS_OUT_MAX = 64255
-POS_IN_MAX  = 150
-STROKE_CM     = 30.0
-COUNTS_PER_CM = (POS_OUT_MAX - POS_IN_MAX) / STROKE_CM   # ≈ 2136.83
+POS_IN_MAX  = 10
+COUNTS_PER_CM = 100
 
 SPEED_FULL = 0xCD   # ~2.18 cm/s  (FAST)
 SPEED_HALF = 0x64   # ~1.09 cm/s  (SLOW)
 
-_POS_EPSILON      = 5      # counts — "not moving"
-_TARGET_TOLERANCE = 3000   # counts ≈ 1.4 cm — overshoot allowance on STOP
-_STABLE_COUNT     = 4      # ~1 s of no movement → homing done
-_STALL_S          = 1.0    # seconds of no movement before a move is called
-                           # stalled (hard stop / jammed auger)
-_MOVE_START_S     = 3.0    # grace period for motion to begin before the
-                           # command is re-sent — stall detection stays
-                           # disarmed until the actuator has actually moved
+_TARGET_TOLERANCE = 15   # counts — close-enough window for position
 
 HB_COB = 0x701  # master heartbeat COB-ID the actuator's 0x1016 entry expects
-
-
-def _rpdo(code: int, speed: int) -> list:
-    """Build an 8-byte RPDO1 payload (LINAK manual p.11)."""
-    return [
-        code & 0xFF, (code >> 8) & 0xFF,
-        0xFB,          # current — default
-        speed & 0xFF,  # speed
-        0xFB, 0xFB,    # ramp up / ramp down — default
-        0x00, 0x00,
-    ]
 
 
 # ============================================================
@@ -209,8 +190,7 @@ class ArduinoLink:
         while not self._stop.is_set():
             try:
                 raw = self.ser.readline()
-            except serial.SerialException as exc:
-                print(f'Serial read error: {exc}')
+            except (serial.SerialException, TypeError, OSError):
                 return
             if not raw:
                 continue
@@ -256,7 +236,7 @@ class LinakChannel:
         # Consumer-heartbeat watchdog at 3× period, armed while the master
         # heartbeat is already flowing (otherwise the node EMCYs and drops
         # to PRE-OPERATIONAL, silently ignoring every RPDO afterwards).
-        self.node.sdo[0x1016][1].raw = (0x01 << 16) + self._hb_ms * 3
+        self.node.sdo[0x1016][1].raw = (0x01 << 16) + 500
         time.sleep(0.1)
 
         rpdo = self.node.rpdo[1]
@@ -271,91 +251,114 @@ class LinakChannel:
         print('LINAK → OPERATIONAL ...')
         self.node.nmt.state = 'OPERATIONAL'
         time.sleep(0.2)
-        self.send(CMD_STOP)
+        self.send_command(CMD_STOP)
         time.sleep(1.0)
-        self.send(CMD_CLEAR)   # clear faults latched by a previous run
+        self.send_command(CMD_CLEAR)
         time.sleep(1.0)
         print('LINAK ready.')
 
     def _on_tpdo(self, can_id: int, data: bytes, timestamp: float) -> None:
-        if len(data) >= 2:
-            with self._pos_lock:
-                self._pos = data[0] | (data[1] << 8)
+        if len(data) < 7:
+            return
+        pos = data[0] | (data[1] << 8)
+        cur = data[2]
+        status = data[3]
+        err = data[4]
+        speed = data[5] | (data[6] << 8)
+        with self._pos_lock:
+            self._pos = pos
+            self._tpdo = (timestamp, pos, cur, status, err, speed)
 
     def position(self):
         with self._pos_lock:
             return self._pos
 
-    def _settled_position(self, fallback: int) -> int:
-        """Latest TPDO position, falling back to the caller's last good read."""
-        pos = self.position()
-        return fallback if pos is None else pos
-
-    def send(self, code: int, speed: int = SPEED_HALF) -> None:
-        self._net.send_message(self.cob_rpdo1, _rpdo(code, speed))
+    def send_command(self, position_code: int, speed: int = SPEED_FULL) -> None:
+        """Send RPDO — position code + speed byte."""
+        msg = [
+            position_code & 0xFF, (position_code >> 8) & 0xFF,
+            0xFB, speed & 0xFF, 0xFB, 0xFB,
+            0x00, 0x00,
+        ]
+        self._net.send_message(self.cob_rpdo1, msg)
+        self._cmd_time = time.time()
+        print(f'  RPDO → pos_code={position_code}  raw={msg}')
 
     def stop(self) -> None:
         try:
-            self.send(CMD_STOP)
+            self.send_command(CMD_STOP)
         except Exception:
             pass
 
-    # ── Blocking moves ────────────────────────────────────────────────────
+    def monitor(self, duration_s: float, poll_s: float = 0.1) -> None:
+        """Print TPDO feedback for duration_s, same format as can_tests.py."""
+        last_ts = None
+        end = time.time() + duration_s
+        while time.time() < end:
+            with self._pos_lock:
+                sample = self._tpdo if hasattr(self, '_tpdo') else None
+            if sample is not None and sample[0] != last_ts:
+                last_ts = sample[0]
+                ts, pos, cur, status, err, speed = sample
+                t = time.time() - getattr(self, '_cmd_time', time.time())
+                print(f'    t={t:6.2f}s  pos={pos:5d}  cur={cur:3d}  '
+                      f'speed={speed:5d}  status=0x{status:02X}  err=0x{err:02X}')
+            time.sleep(poll_s)
 
-    def home_in_max(self, timeout_s: float = 60.0) -> None:
-        """Retract to IN_MAX; done when TPDO position stops changing."""
-        self.send(CMD_IN, SPEED_FULL)
-        poll, elapsed = 0.25, 0.0
-        stable, last, start = 0, None, None
-        moving = False
+    def send_and_wait(self, position_code: int, target: int,
+                      timeout_s: float = 60.0) -> int:
+        """
+        Send a position code via RPDO (like can_tests.py send_actuator_command)
+        and poll TPDO until pos reaches target (within _TARGET_TOLERANCE).
+        Prints position on every TPDO update. Returns final position.
+        """
+        extending = (target > (self.position() or 0))
+        self.send_command(position_code)
 
+        poll, elapsed = 0.1, 0.0
+        last_ts = None
         while elapsed < timeout_s:
             time.sleep(poll)
             elapsed += poll
-            pos = self.position()
+            with self._pos_lock:
+                sample = self._tpdo if hasattr(self, '_tpdo') else None
+                pos = self._pos
+            # Print every new TPDO
+            if sample is not None and sample[0] != last_ts:
+                last_ts = sample[0]
+                ts, p, cur, status, err, speed = sample
+                t = time.time() - self._cmd_time
+                print(f'    t={t:6.2f}s  pos={p:5d}  cur={cur:3d}  '
+                      f'speed={speed:5d}  status=0x{status:02X}  err=0x{err:02X}')
             if pos is None:
                 continue
+            if extending and pos >= target - _TARGET_TOLERANCE:
+                self.send_command(CMD_STOP)
+                print(f'  reached pos={pos}')
+                return pos
+            if not extending and pos <= target + _TARGET_TOLERANCE:
+                self.send_command(CMD_STOP)
+                print(f'  reached pos={pos}')
+                return pos
 
-            if not moving:
-                if start is None:
-                    start = pos
-                elif abs(pos - start) > _POS_EPSILON:
-                    moving = True
-                elif elapsed >= 3.0:
-                    # Post-CLEAR settling can swallow the first RPDO — resend.
-                    print('  no motion yet — re-sending IN')
-                    self.send(CMD_IN, SPEED_FULL)
-                    start, elapsed = pos, 0.0
-                last = pos
-                continue
+        self.send_command(CMD_STOP)
+        final = self.position()
+        raise TimeoutError(
+            f'move timed out after {timeout_s} s (at pos={final})')
 
-            if last is not None and abs(pos - last) <= _POS_EPSILON:
-                stable += 1
-            else:
-                stable = 0
-            last = pos
-            if stable >= _STABLE_COUNT:
-                self.send(CMD_STOP)
-                print(f'  homed at pos={pos}')
-                return
+    # ── Blocking moves (position control like can_tests.py) ──────────
 
-        self.send(CMD_STOP)
-        raise TimeoutError(f'IN_MAX homing timed out after {timeout_s} s')
+    def home_in_max(self, timeout_s: float = 60.0) -> None:
+        """Retract to IN_MAX by sending POS_IN_MAX as position target."""
+        self.send_and_wait(POS_IN_MAX, POS_IN_MAX, timeout_s)
 
     def move_distance(self, direction: int, distance_cm: float,
-                      speed: int, timeout_s: float = 60.0,
+                      speed: int = 0xCD, timeout_s: float = 60.0,
                       floor_pos: int = None) -> tuple:
         """
-        Extend/retract distance_cm from the live TPDO position, stopping at
-        the computed target — or earlier if the actuator stalls on a hard stop.
-
-        floor_pos (retract only) clamps the target so the move can never travel
-        further in than that position. Pass the position the drill started from
-        and a retract can never overshoot back past it, however short the
-        drill-down actually got.
-
-        Returns (start_pos, end_pos) so the caller can see how far it really
-        travelled — a stalled drill travels less than it was asked to.
+        Extend/retract distance_cm from the current TPDO position.
+        Sends the computed target position directly (like can_tests.py).
+        Returns (start_pos, end_pos).
         """
         poll = 0.1
         waited, start = 0.0, self.position()
@@ -368,64 +371,15 @@ class LinakChannel:
 
         delta = int(round(distance_cm * COUNTS_PER_CM))
         if direction == CMD_OUT:
-            target  = min(start + delta, POS_OUT_MAX)
-            reached = lambda p: p >= target - _TARGET_TOLERANCE
+            target = min(start + delta, POS_OUT_MAX)
         else:
-            target  = max(start - delta, POS_IN_MAX)
+            target = max(start - delta, POS_IN_MAX)
             if floor_pos is not None:
-                # Never travel further in than the caller's floor, whatever
-                # distance was asked for.
                 target = max(target, floor_pos)
-            reached = lambda p: p <= target + _TARGET_TOLERANCE
 
-        print(f'  move {start} → {target} ({distance_cm:.2f} cm, '
-              f'speed=0x{speed:02X})')
-        self.send(direction, speed)
-
-        elapsed, last_moving, stalls = 0.0, start, 0
-        moving = False   # stall detection stays disarmed until it has moved
-        resent = False
-        while elapsed < timeout_s:
-            time.sleep(poll)
-            elapsed += poll
-            pos = self.position()
-            if pos is None:
-                continue
-
-            # Reaching the target always wins, and is checked before anything
-            # else: the actuator is stopped here and the move returns
-            # immediately, so sitting still afterwards can never be counted as
-            # a stall no matter how long it rests.
-            if reached(pos):
-                self.send(CMD_STOP)
-                print(f'  target reached at pos={pos}')
-                return start, self._settled_position(pos)
-
-            if abs(pos - last_moving) > _POS_EPSILON:
-                last_moving, stalls = pos, 0
-                moving = True
-            elif moving:
-                stalls += 1
-            elif elapsed >= _MOVE_START_S:
-                # Still hasn't budged. A post-CLEAR/STOP settle can swallow the
-                # first RPDO, so re-send once before giving up — same recovery
-                # home_in_max() uses. Not a stall: it never started.
-                if not resent:
-                    print('  no motion yet — re-sending command')
-                    self.send(direction, speed)
-                    resent, elapsed = True, 0.0
-                else:
-                    self.send(CMD_STOP)
-                    print(f'  never started moving from pos={pos} — aborting')
-                    return start, pos
-
-            if stalls >= int(_STALL_S / poll):   # stopped mid-travel → hard stop
-                self.send(CMD_STOP)
-                print(f'  stalled at pos={pos} (target {target}) — treating as done')
-                return start, self._settled_position(pos)
-
-        self.send(CMD_STOP)
-        raise TimeoutError(f'distance move timed out after {timeout_s} s')
+        print(f'  move {start} → {target} ({distance_cm:.2f} cm)')
+        end = self.send_and_wait(target, target, timeout_s)
+        return start, end
 
 
 # ============================================================
@@ -443,9 +397,10 @@ def run_sequence(args, log: RunLog, ard: ArduinoLink, linak: LinakChannel) -> No
     # with no settle time; this test does the same.
 
     log.set_state('DRILLING_DOWN')
-    drill_start, drill_end = linak.move_distance(CMD_OUT, args.drill_cm, SPEED_HALF)
-    travelled_cm = abs(drill_end - drill_start) / COUNTS_PER_CM
-    print(f'  drilled {travelled_cm:.2f} cm of {args.drill_cm:.2f} cm commanded')
+    target_counts = int(round(args.drill_cm * COUNTS_PER_CM))
+    print(f'  drilling to {target_counts} counts ({args.drill_cm:.1f} cm) at HALF speed')
+    linak.send_command(target_counts, SPEED_HALF)
+    linak.monitor(20)
 
     log.set_state('DRILLING_DWELL')
     print(f'  dwelling {args.dwell} s with auger spinning ...')
@@ -453,15 +408,10 @@ def run_sequence(args, log: RunLog, ard: ArduinoLink, linak: LinakChannel) -> No
 
     log.set_state('AUGER_RETRACT')
     ard.send(f'bldc,in,{args.rpm}')          # FSM re-asserts the spin command
-    # Retract only as far as the drill actually went. If the auger stalled on a
-    # rock at 5 cm, retracting the commanded 12 cm would drive the carriage past
-    # where it started and into whatever is mounted above the LINAK. floor_pos
-    # enforces the same limit on position, in case travel and counts disagree.
-    retract_cm = min(args.retract_cm, travelled_cm)
-    if retract_cm < args.retract_cm:
-        print(f'  LIMITING retract to {retract_cm:.2f} cm '
-              f'(drill only travelled that far; {args.retract_cm:.2f} cm requested)')
-    linak.move_distance(CMD_IN, retract_cm, SPEED_FULL, floor_pos=drill_start)
+    print(f'  retracting to {POS_IN_MAX} counts at FULL speed')
+    linak.send_command(POS_IN_MAX, SPEED_FULL)
+    # ard.send('bldc,stop')
+    linak.monitor(15)
 
     log.set_state('COMPLETE')
     ard.send('bldc,stop')
