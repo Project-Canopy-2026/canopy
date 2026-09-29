@@ -56,6 +56,10 @@ class PlannerNode(Node):
         #self.create_subscription(Odometry, "/odometry/gps", self.gpsodomCb, 1)
         #self.create_subscription(Odometry, "/odometry/filtered", self.localodomCb, 1)
         self.create_subscription(Float32, "/gnss/yaw", self.egoYawCb, 1)
+        self.create_subscription(Bool, "/gnss/heading_valid", self.headingValidCb, 1)
+        self.create_subscription(
+            Bool, "/w200_0120/platform/emergency_stop", self.estopCb, 1
+        )
         self.create_subscription(Mode, "/planning/current_mode", self.currentModeCb, 1)
         self.create_subscription(Bool, "/behavior/is_planting", self.isPlantingCb, 1)
         self.create_subscription(
@@ -99,6 +103,9 @@ class PlannerNode(Node):
         self.is_turning_downhill = False
         self.closest_point_bl = None
         self.remaining_seedling_count = 0
+        self.heading_valid = False
+        self.estopped = False
+        self.point_turn_direction = 0  # +1 left, -1 right, 0 not point turning
 
         self.previous_twist = Twist()
 
@@ -135,6 +142,12 @@ class PlannerNode(Node):
     def egoYawCb(self, msg: Float32):
         # self.get_logger().info("Updated ego yaw")
         self.ego_yaw = msg.data
+
+    def headingValidCb(self, msg: Bool):
+        self.heading_valid = msg.data
+
+    def estopCb(self, msg: Bool):
+        self.estopped = msg.data
 
     def goalPointGeoCb(self, msg: GeoPoint):
         self.goal_point = list(self.latLonToMap(msg.latitude, msg.longitude))
@@ -532,6 +545,15 @@ class PlannerNode(Node):
         return smoothed_twist
 
     def updateTrajectorySimply(self):
+        if self.estopped:
+            # Don't wind up a turn command while the platform can't move; it
+            # would be executed at full rate the moment the e-stop is released.
+            self.publishStatus("E-stopped")
+            self.previous_twist = Twist()
+            self.point_turn_direction = 0
+            self.twist_pub.publish(Twist())
+            return
+
         if self.current_mode == Mode.STOPPED:
             self.publishStatus("Paused")
             self.twist_pub.publish(self.getSmoothed(Twist()))
@@ -578,29 +600,59 @@ class PlannerNode(Node):
         distance_remaining = np.linalg.norm(goal_point)
         yaw_error = self.getYawError(goal_point)
 
-        POINT_TURN_YAW_ERROR_THRESHOLD = np.pi / 8  # 22.5 degrees
-        if abs(yaw_error) > POINT_TURN_YAW_ERROR_THRESHOLD:
-            direction_string = "left" if yaw_error > 0 else "right"
+        if not self.heading_valid:
+            # GPS track only gives heading once we're moving, and the value the
+            # receiver reports before that is stale (0 deg = north at startup).
+            # Drive straight until gnss_interface has a heading instead of
+            # turning towards a goal computed from a heading we don't have.
+            self.point_turn_direction = 0
+            if distance_remaining < 2.0:
+                self.publishStatus("Heading unknown and seedling too close to acquire it. Stopping.",
+                                   level=DiagnosticStatus.WARN)
+                self.twist_pub.publish(self.getSmoothed(Twist()))
+                return
+            cmd_msg = Twist()
+            cmd_msg.linear.x = 0.5
+            self.twist_pub.publish(self.getSmoothed(cmd_msg))
+            self.publishStatus("Driving straight to acquire heading")
+            return
+
+        # Point turn with hysteresis: start above 45 deg, stop below 10 deg, and
+        # keep the direction chosen at the start so a goal near +-180 deg doesn't
+        # flip the turn every cycle. Near the goal, SBAS position noise swings the
+        # bearing a lot, so only turn in place if the goal is clearly behind us.
+        POINT_TURN_START = np.pi / 4
+        POINT_TURN_STOP = np.radians(10)
+        NEAR_GOAL = 2.0  # m
+        start_threshold = POINT_TURN_START if distance_remaining > NEAR_GOAL else np.pi / 2
+
+        if self.point_turn_direction == 0 and abs(yaw_error) > start_threshold:
+            self.point_turn_direction = 1 if yaw_error > 0 else -1
+        elif self.point_turn_direction != 0 and abs(yaw_error) < POINT_TURN_STOP:
+            self.point_turn_direction = 0
+
+        if self.point_turn_direction != 0:
+            direction_string = "left" if self.point_turn_direction > 0 else "right"
             self.publishStatus(f"Turning {direction_string} toward seedling")
-            self.pointTurnFromYawError(yaw_error, omega=1.2, linear=0.8)
+            self.pointTurnFromYawError(self.point_turn_direction, omega=0.8, linear=0.2)
             return
 
         Kp_angular = 1.0
-        target_angular = yaw_error * Kp_angular
+        MAX_DRIVE_ANGULAR = 0.5  # rad/s
+        target_angular = float(np.clip(yaw_error * Kp_angular, -MAX_DRIVE_ANGULAR, MAX_DRIVE_ANGULAR))
 
         SPEED_LIMIT = 0.6  # m/s
-        Kp_linear = 0.25
-        Kp_vel = 0.5  # velocity feedback gain
-        desired_speed = min(distance_remaining * Kp_linear, SPEED_LIMIT)
-        vel_error = desired_speed - self.ego_linear_vel
-        target_speed = max(0.0, min(desired_speed + Kp_vel * vel_error, SPEED_LIMIT))
+        # 0.375 = 0.25 * 1.5, what the old velocity-feedback term amounted to
+        # (it read ego_linear_vel, which nothing ever updated from 0).
+        Kp_linear = 0.375
+        target_speed = min(distance_remaining * Kp_linear, SPEED_LIMIT)
 
         cmd_msg = Twist()
         cmd_msg.linear.x = target_speed
         cmd_msg.angular.z = target_angular
         self.twist_pub.publish(self.getSmoothed(cmd_msg))
         self.publishStatus(
-            f"Driving {target_speed:.2} m/s (actual {self.ego_linear_vel:.2}), {distance_remaining:.2}m away"
+            f"Driving {target_speed:.2} m/s, {distance_remaining:.2}m away"
         )
 
     def publishAssistedTwist(self):
