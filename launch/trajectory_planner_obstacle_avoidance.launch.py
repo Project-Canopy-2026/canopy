@@ -38,7 +38,7 @@ def generate_launch_description():
         output="screen",
         parameters=[{
             "base_link_height": 0.30,      # base_link above ground (Warthog wheel radius)
-            "min_obstacle_height": 0.2,    # above ground; lower points are ignored
+            "min_obstacle_height": 0.1,    # above ground; lower points are ignored
             "max_obstacle_height": 2.0,    # above ground; ignores overhanging canopy
             # Box in base_link that covers the robot body/arm, so self-hits aren't obstacles.
             # DONE: set to the measured robot extent including the arm.
