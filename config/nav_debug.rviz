@@ -1,0 +1,386 @@
+# Navigation debug view. Fixed frame: map (ENU, origin = MAP_ORIGIN).
+# Launch: ros2 launch <repo>/launch/nav_debug_viz.launch.py
+# Tweak in RViz and use File > Save Config to keep changes.
+Panels:
+- Class: rviz_common/Displays
+  Name: Displays
+  Help Height: 0
+  Splitter Ratio: 0.6
+  Tree Height: 600
+- Class: rviz_common/Views
+  Name: Views
+  Splitter Ratio: 0.5
+Visualization Manager:
+  Class: ''
+  Name: root
+  Enabled: true
+  Value: true
+  Displays:
+  - Class: rviz_default_plugins/Grid
+    Name: Grid (1 m, map)
+    Enabled: true
+    Value: true
+    Reference Frame: map
+    Cell Size: 1
+    Plane Cell Count: 200
+    Color: 80; 80; 80
+    Alpha: 0.4
+    Plane: XY
+    Line Style:
+      Value: Lines
+      Line Width: 0.03
+    Normal Cell Count: 0
+    Offset:
+      X: 0
+      Y: 0
+      Z: 0
+  - Class: rviz_common/Group
+    Name: Localization
+    Enabled: true
+    Value: true
+    Displays:
+    - Class: rviz_default_plugins/TF
+      Name: TF
+      Enabled: true
+      Value: true
+      Marker Scale: 1
+      Show Arrows: false
+      Show Axes: true
+      Show Names: true
+      Update Interval: 0
+      Frames:
+        All Enabled: false
+        map:
+          Value: true
+        odom:
+          Value: true
+        base_link:
+          Value: true
+        velodyne:
+          Value: true
+        swiftnav-gnss:
+          Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Robot + TF heading (/vis/robot)
+      Enabled: true
+      Value: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /vis/robot
+    - Class: rviz_default_plugins/Odometry
+      Name: Raw GPS heading (/gnss/odom)
+      Enabled: true
+      Value: true
+      Keep: 1
+      Angle Tolerance: 0.1
+      Position Tolerance: 0.1
+      Covariance:
+        Value: false
+      Shape:
+        Value: Arrow
+        Alpha: 1
+        Color: 255; 0; 255
+        Shaft Length: 1.5
+        Shaft Radius: 0.06
+        Head Length: 0.4
+        Head Radius: 0.15
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /gnss/odom
+    - Class: rviz_default_plugins/Path
+      Name: Robot trail (/vis/robot_trail)
+      Enabled: true
+      Value: true
+      Alpha: 1
+      Buffer Length: 1
+      Color: 51; 102; 255
+      Line Style: Billboards
+      Line Width: 0.08
+      Pose Style: None
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /vis/robot_trail
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0.05
+  - Class: rviz_common/Group
+    Name: Global
+    Enabled: true
+    Value: true
+    Displays:
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Seedlings (/vis/seedlings)
+      Enabled: true
+      Value: true
+      Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /vis/seedlings
+    - Class: rviz_default_plugins/Path
+      Name: Target sequence (/vis/global_path)
+      Enabled: true
+      Value: true
+      Alpha: 1
+      Buffer Length: 1
+      Color: 255; 140; 0
+      Line Style: Billboards
+      Line Width: 0.1
+      Pose Style: None
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /vis/global_path
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0.05
+    - Class: rviz_default_plugins/PointStamped
+      Name: Target seedling (/planning/closest_seedling_bl)
+      Enabled: true
+      Value: true
+      Alpha: 1
+      Color: 255; 140; 0
+      Radius: 0.35
+      History Length: 1
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /planning/closest_seedling_bl
+    - Class: rviz_default_plugins/Marker
+      Name: Route (/vis/route, route_planner)
+      Enabled: false
+      Value: false
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /vis/route
+    - Class: rviz_default_plugins/Marker
+      Name: Forest plan (/vis/forest_plan)
+      Enabled: false
+      Value: false
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /vis/forest_plan
+  - Class: rviz_common/Group
+    Name: Local planning / obstacles
+    Enabled: true
+    Value: true
+    Displays:
+    - Class: rviz_default_plugins/Map
+      Name: Total cost (/cost/total)
+      Enabled: true
+      Value: true
+      Alpha: 0.6
+      Color Scheme: costmap
+      Draw Behind: false
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /cost/total
+      Update Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /cost/total_updates
+      Use Timestamp: false
+    - Class: rviz_default_plugins/Map
+      Name: Obstacles (/cost/occupancy)
+      Enabled: false
+      Value: false
+      Alpha: 0.5
+      Color Scheme: map
+      Draw Behind: false
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /cost/occupancy
+      Update Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /cost/occupancy_updates
+      Use Timestamp: false
+    - Class: rviz_default_plugins/Map
+      Name: Seedling distance (/cost/dist_to_seedlings)
+      Enabled: false
+      Value: false
+      Alpha: 0.6
+      Color Scheme: costmap
+      Draw Behind: false
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /cost/dist_to_seedlings
+      Update Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /cost/dist_to_seedlings_updates
+      Use Timestamp: false
+    - Class: rviz_default_plugins/PointCloud2
+      Name: LiDAR obstacles (/nonground)
+      Enabled: true
+      Value: true
+      Alpha: 1
+      Color: 255; 50; 50
+      Color Transformer: FlatColor
+      Decay Time: 0
+      Position Transformer: XYZ
+      Size (Pixels): 3
+      Size (m): 0.05
+      Style: Points
+      Use Fixed Frame: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /nonground
+    - Class: rviz_default_plugins/PointCloud2
+      Name: LiDAR ground (/ground)
+      Enabled: false
+      Value: false
+      Alpha: 1
+      Color: 120; 120; 120
+      Color Transformer: FlatColor
+      Decay Time: 0
+      Position Transformer: XYZ
+      Size (Pixels): 3
+      Size (m): 0.05
+      Style: Points
+      Use Fixed Frame: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /ground
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Candidates (/vis/candidates)
+      Enabled: true
+      Value: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /vis/candidates
+    - Class: rviz_default_plugins/Path
+      Name: Chosen arc (/cmd_vel/path)
+      Enabled: true
+      Value: true
+      Alpha: 1
+      Buffer Length: 1
+      Color: 0; 255; 255
+      Line Style: Billboards
+      Line Width: 0.12
+      Pose Style: None
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /cmd_vel/path
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0.05
+  Global Options:
+    Background Color: 30; 30; 30
+    Fixed Frame: map
+    Frame Rate: 30
+  Tools:
+  - Class: rviz_default_plugins/Interact
+  - Class: rviz_default_plugins/MoveCamera
+  - Class: rviz_default_plugins/Select
+  - Class: rviz_default_plugins/FocusCamera
+  - Class: rviz_default_plugins/Measure
+  Transformation:
+    Current:
+      Class: rviz_default_plugins/TF
+  Views:
+    Current:
+      Class: rviz_default_plugins/TopDownOrtho
+      Name: Current View
+      Angle: 0
+      Scale: 30
+      Target Frame: base_link
+      Value: TopDownOrtho (rviz_default_plugins)
+      X: 0
+      Y: 0
+      Near Clip Distance: 0.01
+      Invert Z Axis: false
+    Saved:
+    - Class: rviz_default_plugins/TopDownOrtho
+      Name: Follow robot (base_link)
+      Angle: 0
+      Scale: 30
+      Target Frame: base_link
+      Value: TopDownOrtho (rviz_default_plugins)
+      X: 0
+      Y: 0
+      Near Clip Distance: 0.01
+      Invert Z Axis: false
+    - Class: rviz_default_plugins/TopDownOrtho
+      Name: Map origin
+      Angle: 0
+      Scale: 30
+      Target Frame: map
+      Value: TopDownOrtho (rviz_default_plugins)
+      X: 0
+      Y: 0
+      Near Clip Distance: 0.01
+      Invert Z Axis: false
+Window Geometry:
+  Width: 1600
+  Height: 950
+  Hide Left Dock: false
+  Hide Right Dock: false

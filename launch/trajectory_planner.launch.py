@@ -178,7 +178,7 @@ def generate_launch_description():
     # )
 
     return LaunchDescription([
-        gnss,
+        #gnss,
         # LiDAR path disabled for GPS-only planner debugging. Re-enable
         # velodyne_* and patchwork_ground_segmentation (and swap
         # free_occupancy_grid back to occupancy_grid) to run with real sensor data.
