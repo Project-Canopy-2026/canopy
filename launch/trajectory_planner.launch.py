@@ -85,7 +85,7 @@ def generate_launch_description():
         name="velodyne_driver",
         output="screen",
         parameters=[{
-            "device_ip": "192.168.1.201",
+            "device_ip": "192.168.1.202",
             "frame_id": "velodyne",
             "model": "VLP16",
             "rpm": 600.0,

@@ -25,17 +25,17 @@ def generate_launch_description():
         )
     )
 
-    trajectory_planner = IncludeLaunchDescription(
+    trajectory_planner_obstacle_avoidance = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
                 '/home/teamj/dev/ros2_ws/src/canopy/launch/',
-                'trajectory_planner.launch.py'
+                'trajectory_planner_obstacle_avoidance.launch.py'
             )
         )
     )
 
     return LaunchDescription([
         manipulation,
-        trajectory_planner,
+        trajectory_planner_obstacle_avoidance,
         planting_fsm_test,
     ])

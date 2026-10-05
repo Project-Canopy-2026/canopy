@@ -58,9 +58,10 @@ sudo ip link set enP8p1s0 up
 
 
 # 6. check connections
-ping -c 2 192.168.131.1
-ping -c 2 192.168.0.222
-ping -c 2 192.168.1.201
+ping -c 2 192.168.131.1 # warthog
+ping -c 2 192.168.0.222 # gps
+ping -c 2 192.168.1.201 # xarm
+ping -c 2 192.168.1.202 # velodyne lidar
 
 
 source install/setup.bash
