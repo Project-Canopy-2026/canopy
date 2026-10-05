@@ -603,7 +603,7 @@ class PlannerNode(Node):
                 self.facing_downhill_pub.publish(Empty())
                 return
 
-            self.pointTurnFromYawError(yaw_error, omega=1.2, linear=0.8)
+            self.pointTurnFromYawError(yaw_error, omega=0.8, linear=0.2)
             return
 
         if self.is_planting:
@@ -735,7 +735,7 @@ class PlannerNode(Node):
                 self.facing_downhill_pub.publish(Empty())
                 return
 
-            self.pointTurnFromYawError(yaw_error, omega=1.2, linear=0.8)
+            self.pointTurnFromYawError(yaw_error, omega=0.8, linear=0.2)
             return
 
         if self.is_planting:
