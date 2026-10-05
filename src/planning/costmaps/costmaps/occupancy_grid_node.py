@@ -141,7 +141,10 @@ class OccupancyGridNode(Node):
     def publishFreeGridIfStale(self):
         if self.last_cloud_time is not None:
             age = self.get_clock().now() - self.last_cloud_time
-            if age < Duration(seconds=0.3):
+            # Must be well above the worst-case gap between clouds. On a loaded
+            # Jetson /nonground drops to ~1 Hz, and a shorter timeout interleaves
+            # free grids with real ones, so obstacles blink in and out.
+            if age < Duration(seconds=1.0):
                 return
             self.publishFreeGrid()
 
@@ -296,7 +299,7 @@ class OccupancyGridNode(Node):
             return float(self.declare_parameter(name, default, desc).value)
 
         self.base_link_height = float_param("base_link_height", 0.30)
-        self.min_obstacle_height = float_param("min_obstacle_height", 0.1)
+        self.min_obstacle_height = float_param("min_obstacle_height", 0.2)
         self.max_obstacle_height = float_param("max_obstacle_height", 2.0)
         self.self_filter_min_x = float_param("self_filter_min_x", -0.9)
         self.self_filter_max_x = float_param("self_filter_max_x", 0.9)

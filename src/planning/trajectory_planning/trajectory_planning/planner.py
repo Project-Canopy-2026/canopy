@@ -114,7 +114,7 @@ class PlannerNode(Node):
         # Obstacle stop box, in base_link metres
         self.STOP_BOX_MIN_X = 1.0  # starts past the occupancy node's self-filter
         self.STOP_BOX_MAX_X = 3.0
-        self.STOP_BOX_HALF_WIDTH = 1.6  # robot half-width plus margin, (warthog width=1.34m)
+        self.STOP_BOX_HALF_WIDTH =  1.0 # robot half-width plus margin, (warthog width=1.34m)
         self.MIN_OBSTACLE_CELLS = 3  # reject single-point LiDAR noise
 
         self.previous_twist = Twist()
