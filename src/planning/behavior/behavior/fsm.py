@@ -59,6 +59,13 @@ class FsmNode(Node):
             Empty, "/behavior/facing_downhill", self.onFacingDownhillCb, 1
         )
 
+        # Release the navigation lock as soon as the planting FSM says it is
+        # finished, instead of waiting out PLANTING_DURATION. DIGGING_OBSTACLE
+        # means it hit a rock, aborted, and planted nothing — move on either way.
+        self.create_subscription(
+            String, "/planting_state", self.onPlantingStateCb, 1
+        )
+
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
@@ -86,6 +93,16 @@ class FsmNode(Node):
         self.is_planting = True
         self.do_plant_pub.publish(Empty())
         self.planting_start_time = time()
+
+    def onPlantingStateCb(self, msg: String):
+        if not self.is_planting:
+            return
+        if msg.data == "DIGGING_OBSTACLE":
+            self.get_logger().warn("Obstacle at seedling site — skipping, moving on.")
+            self.is_planting = False
+        elif msg.data == "COMPLETE":
+            self.get_logger().info("Planting complete — resuming navigation.")
+            self.is_planting = False
 
     def publishStatus(self, desc: str, level=DiagnosticStatus.OK):
         self.status_pub.publish(

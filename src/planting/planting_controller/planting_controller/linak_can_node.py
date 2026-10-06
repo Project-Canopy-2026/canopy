@@ -5,25 +5,44 @@ linak_can_node.py — ROS 2 CANopen driver for two LINAK LA36 actuators.
 Subscribes to  /linak_cmd     (std_msgs/String)
 Publishes  to  /linak_status  (std_msgs/String)
 
-Command protocol  (matches planting_fsm_outmax.py)
-───────────────────────────────────────────────────
-  LINAK,<id>,DOWN,<distance_cm>[,FAST|SLOW]  — extend by distance_cm, then STOP
-  LINAK,<id>,UP,<distance_cm>[,FAST|SLOW]    — retract by distance_cm, then STOP
-      Distance-based: stops when TPDO position reaches the computed target
-      (start ± distance_cm * COUNTS_PER_CM), with stall-detection fallback.
-      Speed tag: FAST = 2.18 cm/s (0xCD), SLOW = 1.09 cm/s (0x64).
-      Omitting the tag uses SLOW (preserves legacy slow-drilling default).
-  LINAK,<id>,OUT_MAX            — drive to full extension; completion via TPDO
-  LINAK,<id>,IN_MAX             — drive to full retraction; completion via TPDO
+Moves are ABSOLUTE positions, in cm measured from full retraction
+─────────────────────────────────────────────────────────────────
+Position 0 cm is home (the hard stop at POS_HOME); 30 cm is the end of the
+stroke. The setpoint is written into the actuator's mapped 'Actuator Command.
+Position' and the hardware's own servo drives there — this node watches TPDO,
+confirms arrival and reports. Every target is clamped into [0, STROKE_CM], so no
+command can aim past the hard stop and sit grinding against it.
+
+  LINAK,<id>,GOTO,<position_cm>[,FAST|SLOW]  — end up AT position_cm
+      Independent of where the actuator is now: GOTO 30 from 10 cm is a 20 cm
+      move, not a 30 cm one. This is what planting_fsm.py uses.
+  LINAK,<id>,HOME               — retract onto the hard stop (= GOTO 0, FAST,
+                                  where a stall IS success)
+  LINAK,<id>,DOWN,<distance_cm>[,FAST|SLOW]  — relative jog, extend BY
+  LINAK,<id>,UP,<distance_cm>[,FAST|SLOW]    — relative jog, retract BY
+      Kept for manual testing (unit_test/can_tests/linak_cmd_test_node.py).
+      The FSM does not use them: a relative command is only as good as your
+      belief about where the arm currently is, which is exactly the assumption
+      that turned a short home into a false obstacle abort.
   LINAK,<id>,STOP               — stop immediately
-  LINAK,<id>,CLEAR              — clear faults
+
+Speed tag on GOTO/DOWN/UP: FAST = 2.18 cm/s (0xCD), SLOW = 1.09 cm/s (0x64).
+Omitting it uses SLOW (preserves the legacy slow-drilling default).
+IN_MAX is accepted as a synonym for HOME.
 
 Status replies on /linak_status
 ────────────────────────────────
-  READY:LINAK              — both actuators initialised (published once on startup)
-  ACK:LINAK<id>            — command accepted
-  DONE:LINAK<id>           — timed move or position-based move completed
-  ERR:LINAK<id>:<detail>   — exception during move
+  READY:LINAK               — both actuators initialised (published once on startup)
+  ACK:LINAK<id>             — command accepted
+  DONE:LINAK<id>,<cm>       — reached the commanded target
+  STALL:LINAK<id>,<cm>      — stopped short against something solid
+  STOPPED:LINAK<id>,<cm>    — aborted by an external STOP
+  ERR:LINAK<id>:<detail>    — exception during move
+
+Every terminal reply carries the distance ACTUALLY travelled. With absolute
+targets a caller no longer needs it to undo a move — it just commands HOME — but
+it is what distinguishes a real obstacle (stalled well short) from the hard stop
+(stalled at the commanded depth), and it is worth having in the log either way.
 
 ROS parameters
 ──────────────
@@ -36,13 +55,30 @@ ROS parameters
 
 BUGS FIXED vs. previous versions
 ──────────────────────────────────
-  1. OUT_MAX / IN_MAX commands were silently ignored — now handled.
-  2. TPDO position listener added for OUT_MAX/IN_MAX completion detection.
+  1. Stall no longer masquerades as success — it reports STALL, not DONE, so a
+     caller can tell "reached depth" from "stopped short against a rock".
+  2. Terminal replies carry actual travel; retracts no longer over-drive into
+     the hard stop after a short move.
   3. EDS path resolved relative to this file's install location, not CWD.
   4. lambda closure capture bug in _on_cmd fixed (lid=lid default arg).
   5. READY:LINAK and ACK:LINAK<n> status messages now published.
   6. Both actuators share one canopen.Network (correct); HB_COB = 0x701
      matches the SDO consumer-heartbeat entry (0x01 << 16) already in use.
+  7. Position scale corrected to 100 counts/cm (0.1 mm per count, as the
+     actuator actually reports) from a derived ≈2136.83. The old value made
+     every commanded distance ~21x too large, so a drill aimed at a target it
+     could never reach and ended on stall detection — which planting_fsm.py
+     reads as an obstacle. Every plant aborted as a false DIGGING_OBSTACLE.
+     _TARGET_TOLERANCE and the home position are in the same units and moved
+     with it.
+  8. Moves are absolute positions driven by the actuator's own servo, matching
+     unit_test/fsr/planting_fsr_test.py — the only version of this that has
+     ever run in the field. Previously every move was relative (start ± delta)
+     and driven by CMD_OUT/CMD_IN "run continuously" with this node's poll loop
+     as the only thing that stopped it. Relative targets compound: a homing
+     that finished short left the arm part-extended, the next full-depth DOWN
+     aimed past the hard stop, and the resulting stall read as a rock. Absolute
+     targets plus a real [POS_HOME, POS_MAX] clamp remove the whole class.
 """
 
 import os
@@ -61,33 +97,58 @@ try:
 except ImportError:
     _AMENT_AVAILABLE = False
 
-# ── LINAK PDO position codes (LINAK manual, p.11) ────────────────────────────
-CMD_OUT   = 64257   # run out  (extend)
-CMD_IN    = 64258   # run in   (retract)
+# ── LINAK PDO command codes (LINAK manual, p.11) ─────────────────────────────
+# Values 64256+ are commands; anything below is an absolute position setpoint,
+# which is how moves are driven here.
 CMD_STOP  = 64259   # stop
 CMD_CLEAR = 64256   # clear errors
+# "run out" / "run in" continuously. Not used: moves are position setpoints now.
+# Kept because they are the other half of the manual's table and knowing which
+# values are reserved is what makes the 64255 ceiling make sense.
+CMD_OUT   = 64257
+CMD_IN    = 64258
 
-# Position targets for OUT_MAX / IN_MAX
-# can also achieve this with full speed (CD) for 14 seconds
-POS_OUT_MAX = 64255  # full extension
-POS_IN_MAX  = 150    # full retraction
-
-# Stroke geometry: 30 cm of mechanical travel spans POS_IN_MAX → POS_OUT_MAX.
+# Stroke geometry. The actuator reports and accepts position in 0.1 mm units, so
+# 100 counts = 1 cm — confirmed on the hardware, and the same scale
+# unit_test/fsr/planting_fsr_test.py uses.
+#
+# This was previously derived as (64255 - 150) / STROKE_CM ≈ 2136.83, on the
+# assumption that the full 0…64255 range spans the stroke. It does not: 64255 is
+# merely the highest value that is not a command code (64256+). That made every
+# distance ~21x too large, so a drill clamped at a target it could never reach,
+# ended on stall detection instead — and a stall during DRILLING_DOWN is exactly
+# what planting_fsm.py reads as an obstacle. Every plant aborted as a false
+# DIGGING_OBSTACLE.
 STROKE_CM     = 30.0
-COUNTS_PER_CM = (POS_OUT_MAX - POS_IN_MAX) / STROKE_CM   # ≈ 2136.83
+COUNTS_PER_CM = 100.0
+
+# Position reported at full retraction, and the origin all depths are measured
+# from: position_cm 0 == POS_HOME. 10 matches planting_fsr_test.py, which homes
+# to it in practice.
+POS_HOME = 10
+# The real end of travel. THIS is the clamp that matters — every target, absolute
+# or relative, is clipped into [POS_HOME, POS_MAX], so no command can aim past
+# the hard stop and sit there grinding until stall detection calls it a rock.
+POS_MAX  = POS_HOME + int(STROKE_CM * COUNTS_PER_CM)   # 3010
 
 # Speed bytes for RPDO1 byte 3 (LINAK manual p.11)
 SPEED_FULL = 0xCD   # ~2.18 cm/s
 SPEED_HALF = 0x64   # ~1.09 cm/s
 SPEED_DEFAULT = SPEED_HALF   # used when no speed specified (preserves slow drilling)
 
-# How many consecutive stable TPDO samples (at ~250 ms each) before declaring done
-_STABLE_COUNT = 4    # ~1 second of no movement
-_POS_EPSILON  = 5    # position counts tolerance for "not moving"
+_POS_EPSILON  = 5    # position counts tolerance for "not moving" — 0.5 mm. A
+                     # move in progress advances ~11 counts per 0.1 s poll even
+                     # at SLOW, so this has ample margin against a false stall.
 
-# Tolerance (in counts) when comparing live TPDO position against a target.
-# ≈ 3000 counts ≈ 1.40 cm — well within what the actuator overshoots on STOP.
-_TARGET_TOLERANCE = 3000
+# Tolerance (in counts) when comparing live TPDO position against a target:
+# 50 counts = 5 mm. Coupled to COUNTS_PER_CM — it has to be read in the same
+# units, and the old 3000 was sized for the old 2136.83 scale. Left at 3000 here
+# it would be 30 cm, i.e. the whole stroke, and every move would report DONE
+# before it had moved at all.
+#
+# 5 mm is comfortably more than the ~2.2 mm the actuator covers between polls at
+# FAST, so a move ends at most one poll early.
+_TARGET_TOLERANCE = 50
 
 
 def _rpdo(code: int, speed: int = SPEED_DEFAULT) -> list:
@@ -150,10 +211,9 @@ class ActuatorChannel:
     """
     Owns one CANopen RemoteNode and a background move thread.
 
-    Handles three move modes:
-      • timed  (DOWN / UP)  — sends direction command, waits N seconds, sends STOP.
-      • to_max (OUT_MAX / IN_MAX) — drives to a position limit; completion is
-        detected by watching TPDO position stabilisation.
+    One move primitive: write an absolute position setpoint and watch TPDO until
+    the reported position reaches it, stalls short of it, or an external STOP
+    cancels the move. Every outcome carries the distance actually travelled.
     """
 
     def __init__(
@@ -181,6 +241,13 @@ class ActuatorChannel:
         # Latest TPDO position (updated by network message callback)
         self._tpdo_pos: Optional[int] = None
         self._tpdo_lock = threading.Lock()
+
+        # Where the current/last move started, and where it has got to. Kept
+        # separate from _tpdo_pos so travelled_cm() still answers correctly
+        # after a move is cancelled midway.
+        self._start_pos: Optional[int] = None
+        self._live_pos:  Optional[int] = None
+        self._travel_lock = threading.Lock()
 
     # ── Startup ───────────────────────────────────────────────────────────
 
@@ -274,82 +341,62 @@ class ActuatorChannel:
 
     # ── Public commands ───────────────────────────────────────────────────
 
-    def start_timed_move(
-        self,
-        direction:  int,
-        duration_s: float,
-        on_done:    Callable,
-        on_err:     Callable,
-        speed:      int = SPEED_DEFAULT,
-    ) -> None:
-        """Extend/retract for <duration_s> seconds, then STOP."""
-        self._abort()
-        self._cancel.clear()
-        self._move_thread = threading.Thread(
-            target=self._worker_timed,
-            args=(direction, duration_s, on_done, on_err, speed),
-            daemon=True,
-            name=f"linak{self.linak_id}_timed",
-        )
-        self._move_thread.start()
+    def travelled_cm(self) -> float:
+        """How far the current/last move actually moved, in cm."""
+        with self._travel_lock:
+            if self._start_pos is None or self._live_pos is None:
+                return 0.0
+            return abs(self._live_pos - self._start_pos) / COUNTS_PER_CM
 
-    def start_position_move(
-        self,
-        direction:    int,
-        target_pos:   int,
-        on_done:      Callable,
-        on_err:       Callable,
-    ) -> None:
-        """
-        Drive in <direction> until position stabilises near <target_pos>.
-        Completion fires on_done(); the move thread monitors TPDO feedback.
-        """
-        self._abort()
-        self._cancel.clear()
-        self._move_thread = threading.Thread(
-            target=self._worker_position,
-            args=(direction, target_pos, on_done, on_err),
-            daemon=True,
-            name=f"linak{self.linak_id}_pos",
-        )
-        self._move_thread.start()
+    # ── Public commands ───────────────────────────────────────────────────
 
-    def start_distance_move(
+    def start_move(
         self,
-        direction:    int,
-        distance_cm:  float,
-        on_done:      Callable,
-        on_err:       Callable,
-        speed:        int = SPEED_DEFAULT,
+        target_pos:    int,
+        on_result:     Callable,
+        speed:         int  = SPEED_DEFAULT,
+        stall_is_done: bool = False,
     ) -> None:
         """
-        Drive <distance_cm> from the current TPDO-reported position in
-        <direction>, stopping when the target count is reached (or earlier if
-        the actuator stalls against a hard stop).
+        Drive to absolute position <target_pos> (already clamped by the caller).
+
+        The actuator servos itself there — we write the setpoint into the mapped
+        'Actuator Command.Position' RPDO and the hardware does the rest. The poll
+        loop only watches, confirms arrival and reports.
+
+        Completion is reported through on_result(outcome, travelled_cm, detail)
+        with outcome one of DONE / STALL / ERR. Set stall_is_done for moves whose
+        intended end IS a hard stop (a HOME).
         """
         self._abort()
         self._cancel.clear()
         self._move_thread = threading.Thread(
-            target=self._worker_distance,
-            args=(direction, distance_cm, on_done, on_err, speed),
+            target=self._worker_move,
+            args=(target_pos, on_result, speed, stall_is_done),
             daemon=True,
-            name=f"linak{self.linak_id}_dist",
+            name=f"linak{self.linak_id}_move",
         )
         self._move_thread.start()
 
-    def stop(self) -> None:
-        """Abort any running move and send STOP."""
+    def stop(self) -> float:
+        """
+        Abort any running move and send STOP.
+
+        Returns how far the aborted move travelled (cm) so the caller can
+        retract exactly that much rather than guessing the commanded distance.
+        """
         self._abort()
         try:
             self._send(CMD_STOP)
         except Exception as exc:
             self._log.warn(f"[LINAK{self.linak_id}] STOP send failed: {exc}")
-
-    def clear(self) -> None:
-        try:
-            self._send(CMD_CLEAR)
-        except Exception as exc:
-            self._log.warn(f"[LINAK{self.linak_id}] CLEAR send failed: {exc}")
+        # Refresh from the newest TPDO sample — the actuator coasts a little
+        # after CMD_STOP, and we want the position it actually ended at.
+        pos = self.get_position()
+        if pos is not None:
+            with self._travel_lock:
+                self._live_pos = pos
+        return self.travelled_cm()
 
     # ── Internals ─────────────────────────────────────────────────────────
 
@@ -363,140 +410,31 @@ class ActuatorChannel:
             self._move_thread.join(timeout=3.0)
         self._move_thread = None
 
-    def _worker_timed(
+    def _worker_move(
         self,
-        direction:  int,
-        duration_s: float,
-        on_done:    Callable,
-        on_err:     Callable,
-        speed:      int = SPEED_DEFAULT,
-    ) -> None:
-        try:
-            self._send(direction, speed)
-            cancelled = self._cancel.wait(timeout=duration_s)
-            self._send(CMD_STOP)
-            if not cancelled:
-                on_done()
-        except Exception as exc:
-            self._safe_stop()
-            on_err(str(exc))
-
-    def _worker_position(
-        self,
-        direction:  int,
-        target_pos: int,
-        on_done:    Callable,
-        on_err:     Callable,
+        target_pos:    int,
+        on_result:     Callable,
+        speed:         int,
+        stall_is_done: bool,
     ) -> None:
         """
-        Drives the actuator to a position limit and detects completion via TPDO.
+        Drive to absolute <target_pos>, comparing live TPDO position against it
+        each poll.
 
-        Phase 1 — Movement detection (up to MOVE_START_TIMEOUT_S):
-          Wait until the position actually starts changing by more than
-          _POS_EPSILON.  This guards against the RPDO arriving before the
-          actuator has processed the previous CLEAR/STOP and started moving.
+        The setpoint goes to the actuator's own position servo, which is what
+        actually stops the move — this loop watches and reports. (It still sends
+        CMD_STOP on arrival to make the stop explicit rather than implied.)
 
-        Phase 2 — Stabilisation detection (up to TIMEOUT_S total):
-          Once movement is confirmed, count consecutive stable readings.
-          _STABLE_COUNT readings within _POS_EPSILON of each other → done.
-
-        Hard timeout of TIMEOUT_S covers mechanical stalls and fault conditions.
-        """
-        POLL_INTERVAL         = 0.25   # seconds between position checks
-        TIMEOUT_S             = 60.0   # total hard timeout
-        MOVE_START_TIMEOUT_S  = 3.0    # how long to wait for motion to begin
-
-        try:
-            self._send(direction)
-
-            stable_count  = 0
-            last_pos      = None
-            start_pos     = None
-            elapsed       = 0.0
-            moving        = False   # True once we've seen actual displacement
-
-            while not self._cancel.is_set():
-                time.sleep(POLL_INTERVAL)
-                elapsed += POLL_INTERVAL
-
-                if elapsed >= TIMEOUT_S:
-                    raise TimeoutError(
-                        f"LINAK{self.linak_id} position move timed out after {TIMEOUT_S} s"
-                    )
-
-                pos = self.get_position()
-                if pos is None:
-                    # No TPDO received yet — keep waiting
-                    continue
-
-                # ── Phase 1: wait for motion to start ─────────────────────
-                if not moving:
-                    if start_pos is None:
-                        start_pos = pos
-                    elif abs(pos - start_pos) > _POS_EPSILON:
-                        moving = True
-                        self._log.debug(
-                            f"[LINAK{self.linak_id}] Motion detected: "
-                            f"{start_pos} → {pos}"
-                        )
-                    elif elapsed >= MOVE_START_TIMEOUT_S:
-                        # Actuator hasn't moved — re-send the command once and
-                        # extend the window (could be post-CLEAR settling time)
-                        self._log.warn(
-                            f"[LINAK{self.linak_id}] No motion after "
-                            f"{MOVE_START_TIMEOUT_S} s — re-sending command"
-                        )
-                        self._send(direction)
-                        start_pos = pos          # reset baseline
-                        elapsed   = 0.0          # reset clock for this phase
-                    last_pos = pos
-                    continue
-
-                # ── Phase 2: stabilisation detection ──────────────────────
-                if last_pos is not None and abs(pos - last_pos) <= _POS_EPSILON:
-                    stable_count += 1
-                else:
-                    stable_count = 0
-
-                last_pos = pos
-
-                if stable_count >= _STABLE_COUNT:
-                    self._send(CMD_STOP)
-                    self._log.debug(
-                        f"[LINAK{self.linak_id}] Position stable at {pos} "
-                        f"(target ~{target_pos})"
-                    )
-                    on_done()
-                    return
-
-            # Cancelled externally
-            self._safe_stop()
-
-        except Exception as exc:
-            self._safe_stop()
-            on_err(str(exc))
-
-    def _worker_distance(
-        self,
-        direction:   int,
-        distance_cm: float,
-        on_done:     Callable,
-        on_err:      Callable,
-        speed:       int = SPEED_DEFAULT,
-    ) -> None:
-        """
-        Distance-based move that actually compares live TPDO position to a
-        computed target. Unlike _worker_position (stops on stabilisation), this
-        stops when |pos − target| ≤ _TARGET_TOLERANCE, giving deterministic
-        travel for arbitrary mid-stroke distances.
-
-        Also falls back to stall detection so we still finish cleanly if the
-        actuator hits a hard stop before reaching the computed target.
+        Three ways to finish, all reporting actual travel:
+          • target reached            → DONE
+          • stalled short of target   → STALL  (or DONE if stall_is_done,
+                                        i.e. a HOME run onto the hard stop)
+          • cancelled by stop()       → no report; stop() publishes STOPPED
         """
         POLL_INTERVAL        = 0.1
         TIMEOUT_S            = 60.0
         INITIAL_POS_TIMEOUT  = 3.0   # how long to wait for a first TPDO sample
-        STALL_SAMPLES        = 10    # ~1 s with no motion → treat as hard stop
+        STALL_SAMPLES        = 10    # ~1 s with no motion → hit something
 
         try:
             # ── Wait for a first TPDO reading so we know where we started ───
@@ -511,47 +449,57 @@ class ActuatorChannel:
             if start_pos is None:
                 raise RuntimeError(
                     f"LINAK{self.linak_id}: no TPDO position received within "
-                    f"{INITIAL_POS_TIMEOUT} s — cannot start distance move"
+                    f"{INITIAL_POS_TIMEOUT} s — cannot start move"
                 )
 
-            delta = int(round(distance_cm * COUNTS_PER_CM))
-            if direction == CMD_OUT:
-                target  = min(start_pos + delta, POS_OUT_MAX)
+            # Publish the origin so travelled_cm() is meaningful even if this
+            # move is cancelled partway by stop().
+            with self._travel_lock:
+                self._start_pos = start_pos
+                self._live_pos  = start_pos
+
+            # Direction is implied by the setpoint, not commanded: whether this
+            # is an extend or a retract is just which side of the target we
+            # happen to be on.
+            target = target_pos
+            if target >= start_pos:
                 reached = lambda p: p >= target - _TARGET_TOLERANCE
             else:
-                target  = max(start_pos - delta, POS_IN_MAX)
                 reached = lambda p: p <= target + _TARGET_TOLERANCE
 
             self._log.debug(
-                f"[LINAK{self.linak_id}] distance move: {start_pos} → {target} "
-                f"({distance_cm:.2f} cm, speed=0x{speed:02X})"
+                f"[LINAK{self.linak_id}] move: {start_pos} → {target} "
+                f"({abs(target - start_pos) / COUNTS_PER_CM:.2f} cm, "
+                f"speed=0x{speed:02X})"
             )
-            self._send(direction, speed)
+            self._send(target, speed)
 
-            elapsed        = 0.0
-            last_moving    = start_pos
-            stall_samples  = 0
+            elapsed       = 0.0
+            last_moving   = start_pos
+            stall_samples = 0
 
             while not self._cancel.is_set():
                 time.sleep(POLL_INTERVAL)
                 elapsed += POLL_INTERVAL
                 if elapsed >= TIMEOUT_S:
                     raise TimeoutError(
-                        f"LINAK{self.linak_id} distance move timed out after "
-                        f"{TIMEOUT_S} s"
+                        f"LINAK{self.linak_id} move timed out after {TIMEOUT_S} s"
                     )
 
                 pos = self.get_position()
                 if pos is None:
                     continue
+                with self._travel_lock:
+                    self._live_pos = pos
 
                 if reached(pos):
                     self._send(CMD_STOP)
+                    travelled = self.travelled_cm()
                     self._log.debug(
                         f"[LINAK{self.linak_id}] target reached at {pos} "
-                        f"(target {target})"
+                        f"(target {target}, travelled {travelled:.2f} cm)"
                     )
-                    on_done()
+                    on_result("DONE", travelled)
                     return
 
                 # Stall detection — hard stop or mechanical obstruction
@@ -562,19 +510,30 @@ class ActuatorChannel:
                     stall_samples += 1
                 if stall_samples >= STALL_SAMPLES:
                     self._send(CMD_STOP)
-                    self._log.warn(
-                        f"[LINAK{self.linak_id}] stalled at {pos} before "
-                        f"reaching target {target} — treating as done"
-                    )
-                    on_done()
+                    travelled = self.travelled_cm()
+                    if stall_is_done:
+                        self._log.debug(
+                            f"[LINAK{self.linak_id}] reached hard stop at {pos} "
+                            f"after {travelled:.2f} cm"
+                        )
+                        on_result("DONE", travelled)
+                    else:
+                        self._log.warn(
+                            f"[LINAK{self.linak_id}] stalled at {pos} before "
+                            f"reaching target {target} — travelled "
+                            f"{travelled:.2f} of "
+                            f"{abs(target - start_pos) / COUNTS_PER_CM:.2f} cm"
+                        )
+                        on_result("STALL", travelled)
                     return
 
-            # Cancelled externally
+            # Cancelled externally — stop() owns the STOPPED report.
             self._safe_stop()
 
         except Exception as exc:
             self._safe_stop()
-            on_err(str(exc))
+            on_result("ERR", self.travelled_cm(), str(exc))
+
 
     def _safe_stop(self) -> None:
         try:
@@ -700,23 +659,32 @@ class LinakDriver(Node):
         self.get_logger().debug(f"→ /linak_status: {token}")
         self._status_pub.publish(String(data=token))
 
-    def _done(self, linak_id: int) -> None:
-        self._publish_status(f"DONE:LINAK{linak_id}")
+    def _result(self, linak_id: int, outcome: str, travelled_cm: float,
+                detail: str = "") -> None:
+        """
+        Publish a move outcome. Every terminal token carries how far the
+        actuator actually travelled, so the caller can undo exactly that much
+        instead of assuming the commanded distance was achieved.
 
-    def _err(self, linak_id: int, detail: str) -> None:
-        self._publish_status(f"ERR:LINAK{linak_id}:{detail}")
+          DONE:LINAK<id>,<cm>     reached the commanded target
+          STALL:LINAK<id>,<cm>    stopped short against something solid
+          STOPPED:LINAK<id>,<cm>  aborted by an external STOP
+          ERR:LINAK<id>:<detail>  move failed
+        """
+        if outcome == "ERR":
+            self._publish_status(f"ERR:LINAK{linak_id}:{detail}")
+        else:
+            self._publish_status(f"{outcome}:LINAK{linak_id},{travelled_cm:.2f}")
 
-    # ── Command callback ──────────────────────────────────────────────────────
 
     def _on_cmd(self, msg: String) -> None:
         """
         Accepted formats:
-          LINAK,<id>,DOWN,<seconds>
-          LINAK,<id>,UP,<seconds>
-          LINAK,<id>,OUT_MAX
-          LINAK,<id>,IN_MAX
+          LINAK,<id>,GOTO,<position_cm>[,FAST|SLOW]
+          LINAK,<id>,HOME
+          LINAK,<id>,DOWN,<distance_cm>[,FAST|SLOW]   (relative jog)
+          LINAK,<id>,UP,<distance_cm>[,FAST|SLOW]     (relative jog)
           LINAK,<id>,STOP
-          LINAK,<id>,CLEAR
         """
         raw = msg.data.strip()
         self.get_logger().debug(f"← /linak_cmd: '{raw}'")
@@ -726,7 +694,7 @@ class LinakDriver(Node):
         if len(parts) < 3 or parts[0].upper() != "LINAK":
             self.get_logger().error(
                 f"Malformed command '{raw}'. "
-                "Expected: LINAK,<id>,<DOWN|UP|OUT_MAX|IN_MAX|STOP|CLEAR>[,<seconds>]"
+                "Expected: LINAK,<id>,<GOTO|HOME|DOWN|UP|STOP>[,<cm>[,FAST|SLOW]]"
             )
             return
 
@@ -745,90 +713,105 @@ class LinakDriver(Node):
         ch     = self._ch[lid]
         action = parts[2].upper()
 
-        # ── Distance-based moves ──────────────────────────────────────────
-        if action in ("DOWN", "UP"):
-            if len(parts) < 4:
-                self.get_logger().error(
-                    f"'{action}' requires a distance in cm. "
-                    f"Expected: LINAK,{lid},{action},<distance_cm>[,FAST|SLOW]"
-                )
-                return
-            try:
-                distance_cm = float(parts[3])
-            except ValueError:
-                self.get_logger().error(f"Invalid distance '{parts[3]}'")
-                return
-            if distance_cm < 0:
-                self.get_logger().error(
-                    f"Distance must be non-negative, got {distance_cm}"
-                )
-                return
-
-            # Optional 5th field: speed (FAST=0xCD, SLOW=0x64). Default = SLOW,
-            # preserving the pre-existing slow-drilling behaviour.
-            speed = SPEED_DEFAULT
-            if len(parts) >= 5 and parts[4]:
-                tag = parts[4].upper()
-                if tag == "FAST":
-                    speed = SPEED_FULL
-                elif tag == "SLOW":
-                    speed = SPEED_HALF
-                else:
+        # ── Moves ─────────────────────────────────────────────────────────
+        if action in ("GOTO", "HOME", "IN_MAX", "DOWN", "UP"):
+            if action in ("HOME", "IN_MAX"):
+                # Full retraction onto the hard stop. Reaching the stop is the
+                # point, so a stall here IS success.
+                target_pos    = POS_HOME
+                speed         = SPEED_FULL
+                stall_is_done = True
+            else:
+                if len(parts) < 4:
+                    unit = "position" if action == "GOTO" else "distance"
                     self.get_logger().error(
-                        f"Invalid speed tag '{parts[4]}' — expected FAST or SLOW"
+                        f"'{action}' requires a {unit} in cm. "
+                        f"Expected: LINAK,{lid},{action},<{unit}_cm>[,FAST|SLOW]"
+                    )
+                    return
+                try:
+                    value_cm = float(parts[3])
+                except ValueError:
+                    self.get_logger().error(f"Invalid {action} value '{parts[3]}'")
+                    return
+                if value_cm < 0:
+                    self.get_logger().error(
+                        f"Value must be non-negative, got {value_cm}"
                     )
                     return
 
-            direction = CMD_OUT if action == "DOWN" else CMD_IN
-            label     = "Extending" if action == "DOWN" else "Retracting"
+                # Optional 5th field: speed (FAST=0xCD, SLOW=0x64). Default SLOW,
+                # preserving the pre-existing slow-drilling behaviour.
+                speed = SPEED_DEFAULT
+                if len(parts) >= 5 and parts[4]:
+                    tag = parts[4].upper()
+                    if tag == "FAST":
+                        speed = SPEED_FULL
+                    elif tag == "SLOW":
+                        speed = SPEED_HALF
+                    else:
+                        self.get_logger().error(
+                            f"Invalid speed tag '{parts[4]}' — expected FAST or SLOW"
+                        )
+                        return
+                stall_is_done = False
+
+                counts = int(round(value_cm * COUNTS_PER_CM))
+                if action == "GOTO":
+                    # Absolute depth from home. Where the actuator happens to be
+                    # is irrelevant: GOTO 30 means "end up at 30 cm", whether
+                    # that is a 30 cm move or a 2 cm one.
+                    target_pos = POS_HOME + counts
+                else:
+                    # DOWN / UP are relative jogs, kept for manual testing.
+                    here = ch.get_position()
+                    if here is None:
+                        self.get_logger().error(
+                            f"[LINAK{lid}] no position feedback yet — cannot "
+                            f"compute a relative {action}. Use GOTO or HOME."
+                        )
+                        return
+                    target_pos = here + counts if action == "DOWN" else here - counts
+
+            # One clamp for every path. This is what stops a too-deep command
+            # from parking against the hard stop until stall detection reports
+            # it as an obstacle.
+            clamped = max(POS_HOME, min(target_pos, POS_MAX))
+            if clamped != target_pos:
+                self.get_logger().warn(
+                    f"[LINAK{lid}] target {target_pos} outside "
+                    f"[{POS_HOME}, {POS_MAX}] — clamped to {clamped} "
+                    f"({(clamped - POS_HOME) / COUNTS_PER_CM:.2f} cm)"
+                )
+            target_pos = clamped
+
             self.get_logger().debug(
-                f"[LINAK{lid}] {label} {distance_cm} cm (speed=0x{speed:02X})"
+                f"[LINAK{lid}] {action} → pos {target_pos} "
+                f"({(target_pos - POS_HOME) / COUNTS_PER_CM:.2f} cm from home, "
+                f"speed=0x{speed:02X})"
             )
             self._publish_status(f"ACK:LINAK{lid}")
-
-            # FIX: capture lid by value in the lambda (was a closure bug)
-            ch.start_distance_move(
-                direction   = direction,
-                distance_cm = distance_cm,
-                on_done     = lambda lid=lid: self._done(lid),
-                on_err      = lambda detail, lid=lid: self._err(lid, detail),
-                speed       = speed,
+            ch.start_move(
+                target_pos    = target_pos,
+                on_result     = lambda outcome, cm, detail="", lid=lid: (
+                    self._result(lid, outcome, cm, detail)
+                ),
+                speed         = speed,
+                stall_is_done = stall_is_done,
             )
 
-        # ── Position-based moves ──────────────────────────────────────────
-        elif action == "OUT_MAX":
-            self.get_logger().debug(f"[LINAK{lid}] OUT_MAX → driving to full extension")
-            self._publish_status(f"ACK:LINAK{lid}")
-            ch.start_position_move(
-                direction  = CMD_OUT,
-                target_pos = POS_OUT_MAX,
-                on_done    = lambda lid=lid: self._done(lid),
-                on_err     = lambda detail, lid=lid: self._err(lid, detail),
-            )
-
-        elif action == "IN_MAX":
-            self.get_logger().debug(f"[LINAK{lid}] IN_MAX → driving to full retraction")
-            self._publish_status(f"ACK:LINAK{lid}")
-            ch.start_position_move(
-                direction  = CMD_IN,
-                target_pos = POS_IN_MAX,
-                on_done    = lambda lid=lid: self._done(lid),
-                on_err     = lambda detail, lid=lid: self._err(lid, detail),
-            )
-
-        # ── Immediate commands ────────────────────────────────────────────
+        # ── Immediate stop — reports how far the aborted move actually got ──
         elif action == "STOP":
-            self.get_logger().debug(f"[LINAK{lid}] STOP")
-            ch.stop()
-
-        elif action == "CLEAR":
-            self.get_logger().debug(f"[LINAK{lid}] CLEAR")
-            ch.clear()
+            travelled = ch.stop()
+            self.get_logger().debug(
+                f"[LINAK{lid}] STOP after {travelled:.2f} cm"
+            )
+            self._publish_status(f"STOPPED:LINAK{lid},{travelled:.2f}")
 
         else:
             self.get_logger().error(
                 f"Unknown action '{action}'. "
-                "Valid: DOWN, UP, OUT_MAX, IN_MAX, STOP, CLEAR"
+                f"Valid: GOTO, HOME, DOWN, UP, STOP"
             )
 
 

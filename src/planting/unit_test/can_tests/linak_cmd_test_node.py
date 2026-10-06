@@ -8,11 +8,22 @@ Run alongside linak_can_node:
 
 Command syntax
 ──────────────
-  <1|2> down  <secs>   →  LINAK,<id>,DOWN,<secs>
-  <1|2> up    <secs>   →  LINAK,<id>,UP,<secs>
-  <1|2> stop           →  LINAK,<id>,STOP
-  <1|2> clear          →  LINAK,<id>,CLEAR
-  q                    →  quit
+  <1|2> goto  <cm> [fast|slow]  →  LINAK,<id>,GOTO,<cm>[,FAST|SLOW]
+  <1|2> home                    →  LINAK,<id>,HOME   (retract to the end stop)
+  <1|2> down  <cm> [fast|slow]  →  LINAK,<id>,DOWN,<cm>[,FAST|SLOW]
+  <1|2> up    <cm> [fast|slow]  →  LINAK,<id>,UP,<cm>[,FAST|SLOW]
+  <1|2> stop                    →  LINAK,<id>,STOP
+  q                             →  quit
+
+Everything is in CENTIMETRES, never seconds.
+
+`goto` is an absolute position measured from home: `1 goto 12` ends at 12 cm
+whether it was at 2 cm or 25 cm. `down`/`up` are relative jogs from wherever the
+arm is now — handy for nudging, but `goto` is what the FSM uses and what you
+want when you care where it ends up. Targets are clamped to the 30 cm stroke.
+
+Omitting the speed tag gets SLOW (1.09 cm/s), the driver's default; FAST is
+2.18 cm/s. Actuator 1 is the auger, 2 is the chute.
 
 Topics
 ──────
@@ -27,8 +38,8 @@ from rclpy.node import Node
 from std_msgs.msg import String
 
 _USAGE = (
-    "Commands:  <1|2> down <secs>  |  <1|2> up <secs>  |"
-    "  <1|2> stop  |  <1|2> clear  |  q"
+    "Commands:  <1|2> goto <cm> [fast|slow]  |  <1|2> home  |"
+    "  <1|2> down|up <cm> [fast|slow]  |  <1|2> stop  |  q"
 )
 
 
@@ -81,22 +92,26 @@ def _input_loop(node: LinakTestNode) -> None:
         if len(parts) == 2 and parts[1] == "stop":
             node.send(f"LINAK,{actuator},STOP")
 
-        elif len(parts) == 2 and parts[1] == "clear":
-            node.send(f"LINAK,{actuator},CLEAR")
+        elif len(parts) == 2 and parts[1] in ("home", "in_max"):
+            node.send(f"LINAK,{actuator},HOME")
 
-        elif len(parts) == 2 and parts[1] == "out_max":
-            node.send(f"LINAK,{actuator},OUT_MAX")
-
-        elif len(parts) == 2 and parts[1] == "in_max":
-            node.send(f"LINAK,{actuator},IN_MAX")
-
-        elif len(parts) == 3 and parts[1] in ("down", "up"):
+        elif len(parts) in (3, 4) and parts[1] in ("goto", "down", "up"):
             try:
-                duration = float(parts[2])
+                value_cm = float(parts[2])
             except ValueError:
-                print("  duration must be a number (seconds)")
+                print("  value must be a number (centimetres)")
                 continue
-            node.send(f"LINAK,{actuator},{parts[1].upper()},{duration}")
+            if value_cm < 0:
+                print("  value must be non-negative")
+                continue
+
+            cmd = f"LINAK,{actuator},{parts[1].upper()},{value_cm}"
+            if len(parts) == 4:
+                if parts[3] not in ("fast", "slow"):
+                    print("  speed must be 'fast' or 'slow'")
+                    continue
+                cmd += f",{parts[3].upper()}"
+            node.send(cmd)
 
         else:
             print(f"  {_USAGE}")
