@@ -74,7 +74,7 @@ import serial
 # ═══════════════════════════════════════════════════════════════════════════
 
 # ── Hardware / connection ──────────────────────────────────────────────────
-PORT        = '/dev/ttyACM1'  # Arduino running planting_arduino.ino  (--port)
+PORT        = '/dev/ttyACM0'  # Arduino running planting_arduino.ino  (--port)
 BAUD        = 115200          # must match its Serial.begin()         (--baud)
 CAN_CHANNEL = 'can1'          # SocketCAN iface the LINAKs are on (--can-channel)
 CAN_BITRATE = 125000          # LINAK bus bitrate                  (--bitrate)
@@ -96,7 +96,7 @@ FSR_HZ      = 10.0    # how often to poll the Arduino for force     (--fsr-hz)
 # soil, so 3.7 V clears every drill ever recorded, and the 2 s hold covers the
 # rest of the margin. No rock or wood strike has been logged yet — retune once
 # one has. See data_InitialFSRFieldTest/ and ../../planting_controller/WORKFLOW.md.
-FSR_ABORT_V   = 3.7   # sustained FSR voltage = obstacle       (--fsr-abort-v)
+FSR_ABORT_V   = 2.5   # sustained FSR voltage = obstacle       (--fsr-abort-v)
 FSR_ABORT_S   = 2.0   # how long it must stay there            (--fsr-abort-s)
 STALL_S       = 1.0   # no position change this long = obstacle    (--stall-s)
 STALL_GRACE_S = 1.5   # ignore stalls this soon after a move starts; the

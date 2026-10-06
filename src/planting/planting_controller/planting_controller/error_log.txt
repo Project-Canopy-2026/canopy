@@ -1,0 +1,44 @@
+~/dev/ros2_ws$ ros2 launch planting_controller planting_bringup.launch.py
+[INFO] [launch]: All log files can be found below /home/teamj/.ros/log/2026-10-06-10-24-50-034839-ubuntu-25150
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [serial_bridge-1]: process started with pid [25151]
+[serial_bridge-1] 2026-10-06 10:24:50.912 [XMLPARSER Error] realpath failed No such file or directory -> Function loadDefaultXMLFile
+[serial_bridge-1] [INFO] [1791296691.122725012] [serial_bridge]: Serial port /dev/ttyACM0 opened at 115200 baud. Waiting for Arduino READY...
+[serial_bridge-1] [INFO] [1791296692.671532865] [serial_bridge]: Arduino is READY — bridge active.
+[INFO] [linak_can_node-2]: process started with pid [25176]
+[linak_can_node-2] 2026-10-06 10:24:53.378 [XMLPARSER Error] realpath failed No such file or directory -> Function loadDefaultXMLFile
+[linak_can_node-2] Transfer aborted by client with code 0x05040000
+[linak_can_node-2] Traceback (most recent call last):
+[linak_can_node-2]   File "/home/teamj/.local/lib/python3.10/site-packages/canopen/sdo/client.py", line 76, in read_response
+[linak_can_node-2]     response = self.responses.get(
+[linak_can_node-2]   File "/usr/lib/python3.10/queue.py", line 179, in get
+[linak_can_node-2]     raise Empty
+[linak_can_node-2] _queue.Empty
+[linak_can_node-2] 
+[linak_can_node-2] During handling of the above exception, another exception occurred:
+[linak_can_node-2] 
+[linak_can_node-2] Traceback (most recent call last):
+[linak_can_node-2]   File "/home/teamj/dev/ros2_ws/install/planting_controller/lib/planting_controller/linak_can_node", line 33, in <module>
+[linak_can_node-2]     sys.exit(load_entry_point('planting-controller', 'console_scripts', 'linak_can_node')())
+[linak_can_node-2]   File "/home/teamj/dev/ros2_ws/build/planting_controller/planting_controller/linak_can_node.py", line 822, in main
+[linak_can_node-2]     driver = LinakDriver()
+[linak_can_node-2]   File "/home/teamj/dev/ros2_ws/build/planting_controller/planting_controller/linak_can_node.py", line 614, in __init__
+[linak_can_node-2]     ch.configure()
+[linak_can_node-2]   File "/home/teamj/dev/ros2_ws/build/planting_controller/planting_controller/linak_can_node.py", line 280, in configure
+[linak_can_node-2]     self.can_node.sdo[0x1016][1].raw = (0x01 << 16) + watchdog_ms
+[linak_can_node-2]   File "/home/teamj/.local/lib/python3.10/site-packages/canopen/variable.py", line 90, in raw
+[linak_can_node-2]     self.data = self.od.encode_raw(value)
+[linak_can_node-2]   File "/home/teamj/.local/lib/python3.10/site-packages/canopen/variable.py", line 46, in data
+[linak_can_node-2]     self.set_data(data)
+[linak_can_node-2]   File "/home/teamj/.local/lib/python3.10/site-packages/canopen/sdo/base.py", line 155, in set_data
+[linak_can_node-2]     self.sdo_node.download(self.od.index, self.od.subindex, data, force_segment)
+[linak_can_node-2]   File "/home/teamj/.local/lib/python3.10/site-packages/canopen/sdo/client.py", line 167, in download
+[linak_can_node-2]     with self.open(index, subindex, "wb", buffering=7, size=len(data),
+[linak_can_node-2]   File "/home/teamj/.local/lib/python3.10/site-packages/canopen/sdo/client.py", line 400, in write
+[linak_can_node-2]     response = self.sdo_client.request_response(request)
+[linak_can_node-2]   File "/home/teamj/.local/lib/python3.10/site-packages/canopen/sdo/client.py", line 95, in request_response
+[linak_can_node-2]     return self.read_response()
+[linak_can_node-2]   File "/home/teamj/.local/lib/python3.10/site-packages/canopen/sdo/client.py", line 79, in read_response
+[linak_can_node-2]     raise SdoCommunicationError("No SDO response received")
+[linak_can_node-2] canopen.sdo.exceptions.SdoCommunicationError: No SDO response received
+[ERROR] [linak_can_node-2]: process has died [pid 25176, exit code 1, cmd '/home/teamj/dev/ros2_ws/install/planting_controller/lib/planting_controller/linak_can_node --ros-args -r __node:=linak_can_node --params-file /tmp/launch_params_o60eyhzu'].
