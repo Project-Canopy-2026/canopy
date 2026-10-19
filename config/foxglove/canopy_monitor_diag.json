@@ -1,0 +1,828 @@
+{
+    "configById": {
+        "map!i10gbb": {
+            "zoomLevel": 19
+        },
+        "3D!nav": {
+            "cameraState": {
+                "perspective": true,
+                "distance": 13.50900219156396,
+                "phi": 2.2052640300970214,
+                "thetaOffset": -92.82542113163471,
+                "targetOffset": [
+                    -0.0014555358209938085,
+                    0.02949239948051903,
+                    0
+                ],
+                "target": [
+                    0,
+                    0,
+                    0
+                ],
+                "targetOrientation": [
+                    0,
+                    0,
+                    0,
+                    1
+                ],
+                "fovy": 45,
+                "near": 0.05,
+                "far": 5000
+            },
+            "followMode": "follow-position",
+            "followTf": "base_link",
+            "scene": {
+                "enableStats": false,
+                "labelScaleFactor": 1,
+                "transforms": {
+                    "visible": true,
+                    "showLabel": false,
+                    "editable": false
+                }
+            },
+            "transforms": {
+                "frame:map": {
+                    "visible": false
+                },
+                "frame:odom": {
+                    "visible": false
+                },
+                "frame:base_link": {
+                    "visible": true
+                },
+                "frame:chassis_link": {
+                    "visible": true
+                }
+            },
+            "topics": {
+                "/vis/robot": {
+                    "visible": true
+                },
+                "/vis/seedlings": {
+                    "visible": true
+                },
+                "/vis/robot_trail": {
+                    "visible": true,
+                    "lineWidth": 0.1,
+                    "gradient": [
+                        "#6b7280",
+                        "#6b7280"
+                    ]
+                },
+                "/vis/global_path": {
+                    "visible": true,
+                    "lineWidth": 0.2,
+                    "gradient": [
+                        "#3b82f6",
+                        "#3b82f6"
+                    ]
+                },
+                "/cmd_vel/path": {
+                    "visible": true,
+                    "lineWidth": 0.12,
+                    "gradient": [
+                        "#22c55e",
+                        "#22c55e"
+                    ]
+                },
+                "/planning/closest_seedling_bl": {
+                    "visible": true,
+                    "pointSize": 12
+                },
+                "/nonground": {
+                    "visible": true,
+                    "pointSize": 3,
+                    "pointShape": "circle",
+                    "colorField": "z",
+                    "colorMode": "colormap",
+                    "colorMap": "turbo",
+                    "decayTime": 0
+                },
+                "/cost/total": {
+                    "visible": true,
+                    "colorMode": "costmap",
+                    "alpha": 0.55,
+                    "frameLocked": false
+                },
+                "/cost/occupancy": {
+                    "visible": false,
+                    "colorMode": "costmap",
+                    "alpha": 0.5,
+                    "frameLocked": false
+                },
+                "/planning/forest_plan": {
+                    "visible": false,
+                    "colorMode": "costmap",
+                    "alpha": 0.3,
+                    "frameLocked": false
+                }
+            },
+            "layers": {
+                "grid": {
+                    "layerId": "foxglove.Grid",
+                    "visible": true,
+                    "frameId": "map",
+                    "size": 100,
+                    "divisions": 50,
+                    "lineWidth": 1,
+                    "color": "#248eff40",
+                    "position": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "rotation": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "order": 1
+                }
+            },
+            "publish": {
+                "type": "point",
+                "poseTopic": "/move_base_simple/goal",
+                "pointTopic": "/clicked_point",
+                "poseEstimateTopic": "/initialpose",
+                "poseEstimateXDeviation": 0.5,
+                "poseEstimateYDeviation": 0.5,
+                "poseEstimateThetaDeviation": 0.26
+            },
+            "imageMode": {},
+            "foxglovePanelTitle": "Navigation 3D — costmap, obstacles, paths",
+            "synchronize": false
+        },
+        "RawMessages!planted": {
+            "topicPath": "/studio_script/mission_progress.summary",
+            "diffEnabled": false,
+            "diffMethod": "custom",
+            "diffTopicPath": "",
+            "showFullMessageForDiff": false,
+            "fontSize": 30,
+            "foxglovePanelTitle": "Seedlings planted",
+            "defaultExpanded": false
+        },
+        "Gauge!battery": {
+            "path": "/w200_0120/platform/bms/state.percentage",
+            "minValue": 0,
+            "maxValue": 1,
+            "colorMap": "red-yellow-green",
+            "colorMode": "colormap",
+            "gradient": [
+                "#3b82f6",
+                "#ff00ff"
+            ],
+            "reverse": false,
+            "foxglovePanelTitle": "Battery",
+            "style": "dial",
+            "reverseDirection": false
+        },
+        "Indicator!is_planting": {
+            "path": "/behavior/is_planting.data",
+            "style": "background",
+            "fallbackColor": "#6b7280",
+            "fallbackLabel": "NAVIGATING",
+            "rules": [
+                {
+                    "operator": "=",
+                    "rawValue": "true",
+                    "color": "#f59e0b",
+                    "label": "PLANTING"
+                }
+            ],
+            "foxglovePanelTitle": "Operation",
+            "fontSize": 36
+        },
+        "RawMessages!4cfkfxh": {
+            "defaultExpanded": false,
+            "topicPath": "/planning/distance_to_seedling.data"
+        },
+        "StateTransitions!mission_modes": {
+            "paths": [
+                {
+                    "value": "/planning/current_mode.level",
+                    "timestampMethod": "receiveTime",
+                    "label": "Mode (behavior_fsm)"
+                },
+                {
+                    "value": "/planting_state.data",
+                    "timestampMethod": "receiveTime",
+                    "label": "Planting FSM"
+                },
+                {
+                    "value": "/behavior/is_planting.data",
+                    "timestampMethod": "receiveTime",
+                    "label": "Is planting"
+                }
+            ],
+            "isSynced": true,
+            "foxglovePanelTitle": "Robot operation timeline"
+        },
+        "Plot!speed_small": {
+            "paths": [
+                {
+                    "value": "/w200_0120/cmd_vel.linear.x",
+                    "enabled": true,
+                    "timestampMethod": "receiveTime",
+                    "label": "cmd v (m/s)"
+                }
+            ],
+            "showXAxisLabels": true,
+            "showYAxisLabels": true,
+            "showLegend": true,
+            "legendDisplay": "floating",
+            "showPlotValuesInLegend": true,
+            "isSynced": true,
+            "xAxisVal": "timestamp",
+            "sidebarDimension": 240,
+            "followingViewWidth": 60,
+            "foxglovePanelTitle": "Robot speed"
+        },
+        "RawMessages!dvj3d7": {
+            "defaultExpanded": false,
+            "topicPath": "/planning/distance_to_seedling",
+            "diffEnabled": false
+        },
+        "Plot!speed": {
+            "paths": [
+                {
+                    "value": "/w200_0120/cmd_vel.linear.x",
+                    "enabled": true,
+                    "timestampMethod": "receiveTime",
+                    "label": "cmd v (m/s)"
+                }
+            ],
+            "showXAxisLabels": true,
+            "showYAxisLabels": true,
+            "showLegend": true,
+            "legendDisplay": "floating",
+            "showPlotValuesInLegend": true,
+            "isSynced": true,
+            "xAxisVal": "timestamp",
+            "sidebarDimension": 240,
+            "followingViewWidth": 60,
+            "foxglovePanelTitle": "Commanded Velocity"
+        },
+        "Plot!3ofsefj": {
+            "paths": [
+                {
+                    "timestampMethod": "receiveTime",
+                    "value": "/w200_0120/cmd_vel.angular.z",
+                    "enabled": true,
+                    "label": "cmd ω (rad/s)"
+                }
+            ],
+            "showXAxisLabels": true,
+            "showYAxisLabels": true,
+            "showLegend": true,
+            "legendDisplay": "floating",
+            "showPlotValuesInLegend": true,
+            "isSynced": true,
+            "xAxisVal": "timestamp",
+            "sidebarDimension": 240,
+            "followingViewWidth": 60,
+            "foxglovePanelTitle": "Commanded Angular Velocity"
+        },
+        "RawMessages!candidates": {
+            "topicPath": "/planning/candidates",
+            "diffEnabled": false,
+            "diffMethod": "custom",
+            "diffTopicPath": "",
+            "showFullMessageForDiff": false,
+            "foxglovePanelTitle": "Trajectory candidates",
+            "defaultExpanded": false
+        },
+        "RawMessages!route": {
+            "topicPath": "/planning/remaining_plan",
+            "diffEnabled": false,
+            "diffMethod": "custom",
+            "diffTopicPath": "",
+            "showFullMessageForDiff": false,
+            "foxglovePanelTitle": "Full TSP route",
+            "defaultExpanded": false
+        },
+        "Image!pot": {
+            "cameraState": {
+                "distance": 20,
+                "perspective": true,
+                "phi": 60,
+                "target": [
+                    0,
+                    0,
+                    0
+                ],
+                "targetOffset": [
+                    0,
+                    0,
+                    0
+                ],
+                "targetOrientation": [
+                    0,
+                    0,
+                    0,
+                    1
+                ],
+                "thetaOffset": 45,
+                "fovy": 45,
+                "near": 0.5,
+                "far": 5000
+            },
+            "followMode": "follow-pose",
+            "scene": {},
+            "transforms": {},
+            "topics": {},
+            "layers": {},
+            "publish": {
+                "type": "point",
+                "poseTopic": "/move_base_simple/goal",
+                "pointTopic": "/clicked_point",
+                "poseEstimateTopic": "/initialpose",
+                "poseEstimateXDeviation": 0.5,
+                "poseEstimateYDeviation": 0.5,
+                "poseEstimateThetaDeviation": 0.26
+            },
+            "imageMode": {
+                "imageTopic": "/pot/annotated_image"
+            },
+            "foxglovePanelTitle": "Pot detection (annotated)",
+            "synchronize": false
+        },
+        "Image!depth": {
+            "cameraState": {
+                "distance": 20,
+                "perspective": true,
+                "phi": 60,
+                "target": [
+                    0,
+                    0,
+                    0
+                ],
+                "targetOffset": [
+                    0,
+                    0,
+                    0
+                ],
+                "targetOrientation": [
+                    0,
+                    0,
+                    0,
+                    1
+                ],
+                "thetaOffset": 45,
+                "fovy": 45,
+                "near": 0.5,
+                "far": 5000
+            },
+            "followMode": "follow-pose",
+            "scene": {},
+            "transforms": {},
+            "topics": {},
+            "layers": {},
+            "publish": {
+                "type": "point",
+                "poseTopic": "/move_base_simple/goal",
+                "pointTopic": "/clicked_point",
+                "poseEstimateTopic": "/initialpose",
+                "poseEstimateXDeviation": 0.5,
+                "poseEstimateYDeviation": 0.5,
+                "poseEstimateThetaDeviation": 0.26
+            },
+            "imageMode": {
+                "imageTopic": "/camera/d405/aligned_depth_to_color/image_raw"
+            },
+            "foxglovePanelTitle": "D405 aligned depth",
+            "synchronize": false
+        },
+        "3D!arm": {
+            "cameraState": {
+                "distance": 1.5,
+                "perspective": true,
+                "phi": 55,
+                "target": [
+                    0,
+                    0,
+                    0
+                ],
+                "targetOffset": [
+                    0,
+                    0,
+                    0
+                ],
+                "targetOrientation": [
+                    0,
+                    0,
+                    0,
+                    1
+                ],
+                "thetaOffset": 45,
+                "fovy": 45,
+                "near": 0.05,
+                "far": 5000
+            },
+            "followMode": "follow-position",
+            "followTf": "link_base",
+            "scene": {
+                "enableStats": false,
+                "labelScaleFactor": 1,
+                "transforms": {
+                    "visible": true,
+                    "showLabel": false,
+                    "editable": false
+                }
+            },
+            "transforms": {},
+            "topics": {
+                "/robot_description": {
+                    "visible": true
+                },
+                "/pot/center_point": {
+                    "visible": true,
+                    "pointSize": 14
+                }
+            },
+            "layers": {
+                "grid": {
+                    "layerId": "foxglove.Grid",
+                    "visible": true,
+                    "frameId": "link_base",
+                    "size": 4,
+                    "divisions": 2,
+                    "lineWidth": 1,
+                    "color": "#248eff40",
+                    "position": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "rotation": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "order": 1
+                }
+            },
+            "publish": {
+                "type": "point",
+                "poseTopic": "/move_base_simple/goal",
+                "pointTopic": "/clicked_point",
+                "poseEstimateTopic": "/initialpose",
+                "poseEstimateXDeviation": 0.5,
+                "poseEstimateYDeviation": 0.5,
+                "poseEstimateThetaDeviation": 0.26
+            },
+            "imageMode": {},
+            "foxglovePanelTitle": "xArm7 (URDF + TF) & pot center",
+            "synchronize": false
+        },
+        "Indicator!chute": {
+            "path": "/chute_in_position.data",
+            "style": "background",
+            "fallbackColor": "#6b7280",
+            "fallbackLabel": "NO DATA",
+            "rules": [
+                {
+                    "operator": "=",
+                    "rawValue": "true",
+                    "color": "#22c55e",
+                    "label": "CHUTE IN POSITION"
+                },
+                {
+                    "operator": "=",
+                    "rawValue": "false",
+                    "color": "#f59e0b",
+                    "label": "CHUTE MOVING"
+                }
+            ],
+            "foxglovePanelTitle": "Chute",
+            "fontSize": 36
+        },
+        "Indicator!dropped": {
+            "path": "/behavior/seedling_dropped.data",
+            "style": "background",
+            "fallbackColor": "#6b7280",
+            "fallbackLabel": "NO DATA",
+            "rules": [
+                {
+                    "operator": "=",
+                    "rawValue": "true",
+                    "color": "#22c55e",
+                    "label": "SEEDLING DROPPED"
+                },
+                {
+                    "operator": "=",
+                    "rawValue": "false",
+                    "color": "#6b7280",
+                    "label": "HOLDING"
+                }
+            ],
+            "foxglovePanelTitle": "Seedling",
+            "fontSize": 36
+        },
+        "StateTransitions!dig": {
+            "paths": [
+                {
+                    "value": "/planting_state.data",
+                    "timestampMethod": "receiveTime",
+                    "label": "Planting FSM"
+                },
+                {
+                    "value": "/linak_status.data",
+                    "timestampMethod": "receiveTime",
+                    "label": "Linak actuator"
+                },
+                {
+                    "value": "/chute_in_position.data",
+                    "timestampMethod": "receiveTime",
+                    "label": "Chute in position"
+                },
+                {
+                    "value": "/behavior/seedling_dropped.data",
+                    "timestampMethod": "receiveTime",
+                    "label": "Seedling dropped"
+                }
+            ],
+            "isSynced": true,
+            "foxglovePanelTitle": "Digging / planting sequence"
+        },
+        "Plot!force": {
+            "paths": [
+                {
+                    "value": "/force_sensor_output.data",
+                    "enabled": true,
+                    "timestampMethod": "receiveTime",
+                    "label": "force"
+                }
+            ],
+            "showXAxisLabels": true,
+            "showYAxisLabels": true,
+            "showLegend": true,
+            "legendDisplay": "floating",
+            "showPlotValuesInLegend": true,
+            "isSynced": true,
+            "xAxisVal": "timestamp",
+            "sidebarDimension": 240,
+            "followingViewWidth": 30,
+            "foxglovePanelTitle": "Digging force (not yet published)"
+        },
+        "Plot!joints": {
+            "paths": [
+                {
+                    "value": "/joint_states.position[0]",
+                    "enabled": true,
+                    "timestampMethod": "receiveTime",
+                    "label": "j1"
+                },
+                {
+                    "value": "/joint_states.position[1]",
+                    "enabled": true,
+                    "timestampMethod": "receiveTime",
+                    "label": "j2"
+                },
+                {
+                    "value": "/joint_states.position[2]",
+                    "enabled": true,
+                    "timestampMethod": "receiveTime",
+                    "label": "j3"
+                },
+                {
+                    "value": "/joint_states.position[3]",
+                    "enabled": true,
+                    "timestampMethod": "receiveTime",
+                    "label": "j4"
+                },
+                {
+                    "value": "/joint_states.position[4]",
+                    "enabled": true,
+                    "timestampMethod": "receiveTime",
+                    "label": "j5"
+                },
+                {
+                    "value": "/joint_states.position[5]",
+                    "enabled": true,
+                    "timestampMethod": "receiveTime",
+                    "label": "j6"
+                },
+                {
+                    "value": "/joint_states.position[6]",
+                    "enabled": true,
+                    "timestampMethod": "receiveTime",
+                    "label": "j7"
+                }
+            ],
+            "showXAxisLabels": true,
+            "showYAxisLabels": true,
+            "showLegend": true,
+            "legendDisplay": "floating",
+            "showPlotValuesInLegend": true,
+            "isSynced": true,
+            "xAxisVal": "timestamp",
+            "sidebarDimension": 240,
+            "followingViewWidth": 30,
+            "foxglovePanelTitle": "xArm joint positions (rad)"
+        },
+        "RawMessages!traj": {
+            "topicPath": "/display_planned_path",
+            "diffEnabled": false,
+            "diffMethod": "custom",
+            "diffTopicPath": "",
+            "showFullMessageForDiff": false,
+            "foxglovePanelTitle": "MoveIt planned trajectory",
+            "defaultExpanded": false
+        },
+        "DiagnosticSummary!diag": {
+            "minLevel": 0,
+            "pinnedIds": [],
+            "topicToRender": "/diagnostics",
+            "hardwareIdFilter": "",
+            "sortByLevel": true,
+            "foxglovePanelTitle": "Diagnostics summary",
+            "secondsUntilStale": 5
+        },
+        "DiagnosticStatusPanel!6jnvpo": {
+            "selectedHardwareId": "Velodyne VLP-16",
+            "selectedName": "velodyne_driver: velodyne_packets topic status",
+            "topicToRender": "/diagnostics"
+        },
+        "RawMessages!diag_raw": {
+            "topicPath": "/diagnostics",
+            "diffEnabled": false,
+            "diffMethod": "custom",
+            "diffTopicPath": "",
+            "showFullMessageForDiff": false,
+            "foxglovePanelTitle": "/diagnostics raw",
+            "defaultExpanded": true,
+            "expansion": {
+                "status": "e",
+                "stamp~header": "c",
+                "0~status": "e",
+                "values~0~status": "e",
+                "0~values~0~status": "e",
+                "1~values~0~status": "e",
+                "2~values~0~status": "e",
+                "3~values~0~status": "e",
+                "4~values~0~status": "e",
+                "5~values~0~status": "e",
+                "6~values~0~status": "e",
+                "7~values~0~status": "e",
+                "8~values~0~status": "e",
+                "9~values~0~status": "e",
+                "10~values~0~status": "e",
+                "11~values~0~status": "e",
+                "12~values~0~status": "e",
+                "13~values~0~status": "e"
+            }
+        },
+        "RawMessages!30uht2t": {
+            "topicPath": "/w200_0120/diagnostics",
+            "diffEnabled": false,
+            "diffMethod": "custom",
+            "diffTopicPath": "",
+            "showFullMessageForDiff": false,
+            "foxglovePanelTitle": "/diagnostics raw",
+            "defaultExpanded": false
+        },
+        "Tab!root": {
+            "activeTabIdx": 0,
+            "tabs": [
+                {
+                    "title": "Mission Overview",
+                    "layout": {
+                        "direction": "row",
+                        "first": {
+                            "direction": "column",
+                            "first": "map!i10gbb",
+                            "second": "3D!nav",
+                            "splitPercentage": 40
+                        },
+                        "second": {
+                            "direction": "column",
+                            "first": {
+                                "direction": "row",
+                                "first": "RawMessages!planted",
+                                "second": "Gauge!battery",
+                                "splitPercentage": 50
+                            },
+                            "second": {
+                                "direction": "column",
+                                "first": {
+                                    "first": "Indicator!is_planting",
+                                    "second": "RawMessages!4cfkfxh",
+                                    "direction": "row"
+                                },
+                                "second": {
+                                    "first": "StateTransitions!mission_modes",
+                                    "second": "Plot!speed_small",
+                                    "direction": "row"
+                                },
+                                "splitPercentage": 29.2078492242842
+                            },
+                            "splitPercentage": 25
+                        },
+                        "splitPercentage": 46.516007532956685
+                    }
+                },
+                {
+                    "title": "Navigation",
+                    "layout": {
+                        "direction": "column",
+                        "first": "RawMessages!dvj3d7",
+                        "second": {
+                            "direction": "column",
+                            "first": {
+                                "first": "Plot!speed",
+                                "second": "Plot!3ofsefj",
+                                "direction": "column"
+                            },
+                            "second": {
+                                "direction": "row",
+                                "first": "RawMessages!candidates",
+                                "second": "RawMessages!route",
+                                "splitPercentage": 50
+                            },
+                            "splitPercentage": 66.21285791464072
+                        },
+                        "splitPercentage": 15.496815722796686
+                    }
+                },
+                {
+                    "title": "Planting & Arm",
+                    "layout": {
+                        "direction": "column",
+                        "first": {
+                            "direction": "row",
+                            "first": {
+                                "direction": "row",
+                                "first": "Image!pot",
+                                "second": "Image!depth",
+                                "splitPercentage": 55
+                            },
+                            "second": "3D!arm",
+                            "splitPercentage": 66
+                        },
+                        "second": {
+                            "direction": "row",
+                            "first": {
+                                "direction": "column",
+                                "first": {
+                                    "direction": "row",
+                                    "first": "Indicator!chute",
+                                    "second": "Indicator!dropped",
+                                    "splitPercentage": 50
+                                },
+                                "second": {
+                                    "direction": "column",
+                                    "first": "StateTransitions!dig",
+                                    "second": "Plot!force",
+                                    "splitPercentage": 50
+                                },
+                                "splitPercentage": 18
+                            },
+                            "second": {
+                                "direction": "column",
+                                "first": "Plot!joints",
+                                "second": "RawMessages!traj",
+                                "splitPercentage": 55
+                            },
+                            "splitPercentage": 55
+                        },
+                        "splitPercentage": 48
+                    }
+                },
+                {
+                    "title": "Diagnostics",
+                    "layout": {
+                        "direction": "row",
+                        "first": {
+                            "direction": "column",
+                            "second": "DiagnosticStatusPanel!6jnvpo",
+                            "first": "DiagnosticSummary!diag",
+                            "splitPercentage": 49.97374968613755
+                        },
+                        "second": {
+                            "first": "RawMessages!diag_raw",
+                            "second": "RawMessages!30uht2t",
+                            "direction": "column"
+                        },
+                        "splitPercentage": 49.21080691426255
+                    }
+                }
+            ]
+        }
+    },
+    "globalVariables": {},
+    "userNodes": {
+        "mission-progress": {
+            "name": "mission_progress",
+            "sourceCode": "// Mission progress: M of N planted, % complete, planting rate.\n// Inputs come from plan_manager. PlantingPlan's array field is found\n// automatically (first array in the message) - set PLAN_FIELD if yours differs.\nconst PLAN_FIELD: string | undefined = \"seedlings\";\nconst RATE_WINDOW_S = 1800; // rolling window for planting rate (30 min)\n\nexport const inputs = [\n  \"/planning/complete_plan\",\n  \"/planning/remaining_plan\",\n  \"/behavior/on_seedling_reached\",\n];\nexport const output = \"/studio_script/mission_progress\";\n\ntype Output = {\n  planted: number;\n  total: number;\n  remaining: number;\n  percent_complete: number;\n  rate_per_hour: number;\n  minutes_since_last: number;\n  eta_minutes: number;\n  summary: string;\n};\n\ntype Ev = { topic: string; receiveTime: { sec: number; nsec: number }; message: any };\n\nlet total = -1;\nlet remaining = -1;\n// complete_plan is a one-shot that bags often miss; fall back to the largest\n// remaining_plan seen (plan_manager republishes the full list on load).\nlet maxRemaining = -1;\nconst reached: number[] = [];\n\nfunction planLength(msg: any): number {\n  if (PLAN_FIELD && Array.isArray(msg[PLAN_FIELD])) return msg[PLAN_FIELD].length;\n  for (const v of Object.values(msg ?? {})) if (Array.isArray(v)) return v.length;\n  return -1;\n}\n\nexport default function script(event: Ev): Output | undefined {\n  const t = event.receiveTime.sec + event.receiveTime.nsec * 1e-9;\n  if (event.topic === \"/planning/complete_plan\") total = planLength(event.message);\n  else if (event.topic === \"/planning/remaining_plan\") {\n    remaining = planLength(event.message);\n    maxRemaining = Math.max(maxRemaining, remaining);\n  }\n  else if (event.topic === \"/behavior/on_seedling_reached\") reached.push(t);\n\n  while (reached.length && t - reached[0] > RATE_WINDOW_S) reached.shift();\n  if (remaining < 0) return undefined;\n  const n = total >= 0 ? total : maxRemaining;\n\n  const planted = Math.max(0, n - remaining);\n  const span = reached.length > 1 ? reached[reached.length - 1] - reached[0] : 0;\n  const rate = span > 0 ? ((reached.length - 1) / span) * 3600 : 0;\n  return {\n    planted,\n    total: n,\n    remaining,\n    percent_complete: n > 0 ? (100 * planted) / n : 0,\n    rate_per_hour: rate,\n    minutes_since_last: reached.length ? (t - reached[reached.length - 1]) / 60 : -1,\n    eta_minutes: rate > 0 ? (remaining / rate) * 60 : -1,\n    summary:\n      n > 0 && remaining === 0\n        ? `All ${n} seedlings are planted — mission complete.`\n        : `${planted} out of ${n} seedlings are planted.`,\n  };\n}\n"
+        },
+        "terrain-slope": {
+            "name": "terrain_slope",
+            "sourceCode": "// Terrain slope from IMU gravity vector (works without an orientation estimate).\n// Low-pass filtered; valid while the robot isn't accelerating hard.\nconst IMU_TOPIC = \"/w200_0120/sensors/imu_0/data\";\nconst ALPHA = 0.1;             // smoothing (0..1, lower = smoother)\n\nexport const inputs = [IMU_TOPIC];\nexport const output = \"/studio_script/terrain_slope\";\n\ntype Output = { pitch_deg: number; roll_deg: number; slope_deg: number };\ntype Ev = { topic: string; receiveTime: { sec: number; nsec: number }; message: any };\n\nlet ax = 0, ay = 0, az = 9.81, init = false;\nconst deg = (r: number) => (r * 180) / Math.PI;\n\nexport default function script(event: Ev): Output {\n  const a = event.message.linear_acceleration;\n  if (!init) { ax = a.x; ay = a.y; az = a.z; init = true; }\n  ax += ALPHA * (a.x - ax); ay += ALPHA * (a.y - ay); az += ALPHA * (a.z - az);\n  const pitch = Math.atan2(-ax, Math.sqrt(ay * ay + az * az));\n  const roll = Math.atan2(ay, az);\n  const slope = Math.acos(Math.min(1, Math.abs(az) / Math.sqrt(ax*ax + ay*ay + az*az)));\n  return { pitch_deg: deg(pitch), roll_deg: deg(roll), slope_deg: deg(slope) };\n}\n"
+        }
+    },
+    "playbackConfig": {
+        "speed": 1
+    },
+    "layout": "Tab!root"
+}
