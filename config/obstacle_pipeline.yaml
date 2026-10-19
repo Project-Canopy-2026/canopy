@@ -1,0 +1,43 @@
+# Parameters for the lidar obstacle pipeline nodes started by
+# behavior/obstacle_pipeline_manager (see launch/trajectory_planner_obstacle_avoidance.launch.py).
+# The manager stops these nodes while the robot is planting and restarts them afterwards.
+# Sections are keyed by node name.
+
+velodyne_driver:
+  ros__parameters:
+    device_ip: "192.168.1.202"
+    frame_id: "velodyne"
+    model: "VLP16"
+    rpm: 600.0
+
+velodyne_convert:
+  ros__parameters:
+    calibration: "/opt/ros/humble/share/velodyne_pointcloud/params/VLP16_hires_db.yaml"
+    model: "VLP16"  # defaults to 64E otherwise
+    min_range: 0.1  # allowed 0.1 to 10
+    max_range: 100.0  # allowed 0.1 to 200
+    organize_cloud: false
+
+ground_segmentation:
+  ros__parameters:
+    cloud_topic: "/velodyne_points"
+    frame_id: "velodyne"
+    sensor_height: 1.365  # lidar height above ground (not above base_link)
+    num_iter: 3
+    num_lpr: 20
+    num_min_pts: 0
+    th_seeds: 0.3
+    th_dist: 0.2
+    th_seeds_v: 0.25
+    th_dist_v: 0.9
+    # Points outside [min_range, max_range] skip segmentation and go straight to
+    # /nonground. The lowest beam meets flat ground ~1.5 m ahead, so keep min_range below that.
+    max_range: 8.0
+    min_range: 1.0
+    uprightness_thr: 0.707
+    # Cloud is de-rotated into a level frame before segmentation. +ve pitch = tilted down.
+    # Keep in sync with velodyne_static_tf in the launch file.
+    lidar_roll_deg: 0.69
+    lidar_pitch_deg: 24.85
+    verbose: false
+    display_time: false

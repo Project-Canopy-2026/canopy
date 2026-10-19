@@ -21,6 +21,7 @@ setup(
         f"console_scripts": [
             f"fsm = {package_name}.fsm:main",
             f"plan_manager = {package_name}.plan_manager:main",
+            f"obstacle_pipeline_manager = {package_name}.obstacle_pipeline_manager:main",
         ],
     },
 )

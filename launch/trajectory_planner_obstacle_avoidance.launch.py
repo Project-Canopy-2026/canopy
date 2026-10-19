@@ -11,9 +11,6 @@ MAP_ORIGIN = [40.44132949798969, -79.94451105594635, 293.0] # try this for the f
 
 def generate_launch_description():
 
-    lidar_cloud_topic = "/velodyne_points"
-    lidar_cloud_frame = "velodyne"
-
     trajectory_planner = Node(
         package="trajectory_planning",
         executable="planner",
@@ -79,61 +76,18 @@ def generate_launch_description():
         parameters=[{"map_origin_lat_lon_alt_degrees": MAP_ORIGIN}],
     )
 
-    velodyne_driver = Node(
-        package="velodyne_driver",
-        executable="velodyne_driver_node",
-        name="velodyne_driver",
+    # Starts velodyne_driver, velodyne_convert and ground_segmentation (Patchwork++) with the
+    # parameters in config/obstacle_pipeline.yaml. Stops them while the robot is planting and
+    # restarts them afterwards; occupancy_grid_node pauses itself while planting.
+    obstacle_pipeline_manager = Node(
+        package="behavior",
+        executable="obstacle_pipeline_manager",
+        name="obstacle_pipeline_manager",
         output="screen",
         parameters=[{
-            "device_ip": "192.168.1.202",
-            "frame_id": "velodyne",
-            "model": "VLP16",
-            "rpm": 600.0,
+            "params_file": os.path.abspath(os.path.join(
+                os.path.dirname(__file__), "..", "config", "obstacle_pipeline.yaml")),
         }],
-    )
-
-    velodyne_pointcloud = Node(
-        package="velodyne_pointcloud",
-        executable="velodyne_transform_node",
-        name="velodyne_convert",
-        output="screen",
-        parameters=[{
-            "calibration": "/opt/ros/humble/share/velodyne_pointcloud/params/VLP16_hires_db.yaml",
-            "model": "VLP16",  # defaults to 64E otherwise
-            "min_range": 0.1, # allowed 0.1 to 10
-            "max_range": 100.0, # allowed 0.1 to 200
-            "organize_cloud": False,
-        }],
-    )
-
-    patchwork_ground_segmentation = Node(
-        package="patchworkpp",
-        executable="demo",
-        name="ground_segmentation",
-        output="screen",
-        parameters=[
-            {"cloud_topic": lidar_cloud_topic},
-            {"frame_id": lidar_cloud_frame},
-            {"sensor_height": 1.365},    # lidar height above ground (not above base_link)
-            {"num_iter": 3},
-            {"num_lpr": 20},
-            {"num_min_pts": 0},
-            {"th_seeds": 0.3},
-            {"th_dist": 0.2},
-            {"th_seeds_v": 0.25},
-            {"th_dist_v": 0.9},
-            # Points outside [min_range, max_range] skip segmentation and go straight to
-            # /nonground. The lowest beam meets flat ground ~1.5 m ahead, so keep min_range below that.
-            {"max_range": 8.0},
-            {"min_range": 1.0},
-            {"uprightness_thr": 0.707},
-            # Cloud is de-rotated into a level frame before segmentation. +ve pitch = tilted down.
-            {"lidar_roll_deg": 0.69},
-            {"lidar_pitch_deg": 24.85},
-            {"verbose": False},
-            {"display_time": False},
-        ],
-        arguments=[lidar_cloud_topic],
     )
 
     # base_link -> velodyne. REP-103: x forward, y left, z up; metres, angles in radians.
@@ -180,12 +134,10 @@ def generate_launch_description():
 
     return LaunchDescription([
         gnss,
-        # LiDAR obstacle path. For GPS-only planner debugging, comment out the
-        # velodyne_* / patchwork / occupancy_grid nodes and use free_occupancy_grid instead.
+        # LiDAR obstacle path. For GPS-only planner debugging, comment out
+        # obstacle_pipeline_manager / occupancy_grid and use free_occupancy_grid instead.
         velodyne_static_tf,
-        velodyne_driver,
-        velodyne_pointcloud,
-        patchwork_ground_segmentation,
+        obstacle_pipeline_manager,
         occupancy_grid,
         fsm,
         plan_manager,

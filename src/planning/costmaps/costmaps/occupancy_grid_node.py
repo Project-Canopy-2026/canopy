@@ -19,7 +19,7 @@ from scipy.spatial.transform import Rotation as R
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from geometry_msgs.msg import Pose, Point
 from nav_msgs.msg import OccupancyGrid, MapMetaData
-from std_msgs.msg import Header
+from std_msgs.msg import Bool, Header
 from canopy_msgs.msg import FailedChecks, HealthCheck, SystemwideStatus
 from sensor_msgs.msg import PointCloud2, PointField
 
@@ -137,8 +137,31 @@ class OccupancyGridNode(Node):
          # Publish a free (all-zero) grid at 10 Hz when no Velodyne data is available
         self.create_timer(0.1, self.publishFreeGridIfStale)
 
+        # While planting, the lidar nodes are stopped (behavior/obstacle_pipeline_manager)
+        # and this node pauses instead of restarting, which is slow in Python.
+        self.paused = False
+        self.create_subscription(Bool, "/behavior/is_planting", self.isPlantingCb, 1)
+
+    def isPlantingCb(self, msg: Bool):
+        if msg.data == self.paused:
+            return
+        self.paused = msg.data
+
+        if self.paused:
+            # Stop processing /tf too; nothing needs transforms until planting is over.
+            self.tf_listener.unregister()
+            self.get_logger().info("Planting started: paused")
+        else:
+            self.tf_listener = TransformListener(self.tf_buffer, self)
+            # Publish nothing, not even a free grid, until a scan arrives after planting,
+            # so the planner never sees a grid made from old or missing data.
+            self.last_cloud_time = None
+            self.get_logger().info("Planting finished: resumed, waiting for the first scan")
+
 
     def publishFreeGridIfStale(self):
+        if self.paused:
+            return
         if self.last_cloud_time is not None:
             age = self.get_clock().now() - self.last_cloud_time
             # Must be well above the worst-case gap between clouds. On a loaded
@@ -219,6 +242,8 @@ class OccupancyGridNode(Node):
     #     self.occ_grid_pub.publish(grid)
     
     def pcdCb(self, msg: PointCloud2):
+        if self.paused:
+            return
         self.last_cloud_time = self.get_clock().now()
 
         pts = pointcloud2_to_array(msg)
