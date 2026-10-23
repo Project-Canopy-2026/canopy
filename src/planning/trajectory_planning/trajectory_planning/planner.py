@@ -103,6 +103,7 @@ class PlannerNode(Node):
         self.is_planting = False
         self.is_turning_downhill = False
         self.closest_point_bl = None
+        self.closest_point_bl_time = None  # when the last bearing arrived
         self.remaining_seedling_count = 0
         self.heading_valid = False
         self.estopped = False
@@ -124,6 +125,7 @@ class PlannerNode(Node):
 
     def closestPointBlCb(self, msg: PointStamped):
         self.closest_point_bl = [msg.point.x, msg.point.y]
+        self.closest_point_bl_time = self.get_clock().now()
 
     def isPlantingCb(self, msg: Bool):
         self.is_planting = msg.data
@@ -635,6 +637,15 @@ class PlannerNode(Node):
             self.publishStatus("Stopped: obstacle ahead", DiagnosticStatus.WARN)
             return
 
+        # The bearing comes from cost_map_node via TF. If it stops arriving, stop
+        # rather than keep turning on an old value.
+        bearing_age = (self.get_clock().now() - self.closest_point_bl_time).nanoseconds * 1e-9
+        if bearing_age > 0.5:
+            self.publishStatus(f"Seedling bearing is {bearing_age:.1f}s old. Holding.",
+                               level=DiagnosticStatus.WARN)
+            self.twist_pub.publish(self.getSmoothed(Twist()))
+            return
+
         goal_point = self.closest_point_bl
         distance_remaining = np.linalg.norm(goal_point)
         yaw_error = self.getYawError(goal_point)
@@ -656,24 +667,33 @@ class PlannerNode(Node):
             self.publishStatus("Driving straight to acquire heading")
             return
 
-        # Point turn with hysteresis: start above 45 deg, stop below 10 deg, and
-        # keep the direction chosen at the start so a goal near +-180 deg doesn't
-        # flip the turn every cycle. Near the goal, SBAS position noise swings the
-        # bearing a lot, so only turn in place if the goal is clearly behind us.
+        # Point turn with hysteresis: start above 45 deg, stop below 20 deg. The
+        # direction is only held while the goal is roughly behind us (where the
+        # sign of the error flips from cycle to cycle); otherwise turn the short
+        # way, so a wrong first choice (e.g. from a stale bearing) corrects itself.
+        # Near the goal, SBAS position noise swings the bearing a lot, so only
+        # turn in place if the goal is clearly behind us.
         POINT_TURN_START = np.pi / 4
-        POINT_TURN_STOP = np.radians(10)
+        POINT_TURN_STOP = np.radians(20)
+        KEEP_DIRECTION_ABOVE = np.radians(135)
         NEAR_GOAL = 2.0  # m
         start_threshold = POINT_TURN_START if distance_remaining > NEAR_GOAL else np.pi / 2
 
         if self.point_turn_direction == 0 and abs(yaw_error) > start_threshold:
             self.point_turn_direction = 1 if yaw_error > 0 else -1
-        elif self.point_turn_direction != 0 and abs(yaw_error) < POINT_TURN_STOP:
-            self.point_turn_direction = 0
+        elif self.point_turn_direction != 0:
+            if abs(yaw_error) < POINT_TURN_STOP:
+                self.point_turn_direction = 0
+            elif abs(yaw_error) < KEEP_DIRECTION_ABOVE:
+                self.point_turn_direction = 1 if yaw_error > 0 else -1
 
         if self.point_turn_direction != 0:
             direction_string = "left" if self.point_turn_direction > 0 else "right"
             self.publishStatus(f"Turning {direction_string} toward seedling")
-            self.pointTurnFromYawError(self.point_turn_direction, omega=0.8, linear=0.2)
+            # Slow down as the error shrinks so lag in the heading/bearing can't
+            # carry us through the stop window.
+            omega = float(np.clip(abs(yaw_error), 0.4, 0.8))
+            self.pointTurnFromYawError(self.point_turn_direction, omega=omega, linear=0.2)
             return
 
         Kp_angular = 1.0

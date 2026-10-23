@@ -81,20 +81,36 @@ class gnss_interface(Node):
         self.yaw_rate = 0.0          # low-passed gyro z, used to gate COG
         self.gyro_bias = 0.0
         self.last_imu_time = None
+        self.last_imu_yaw = None     # yaw from the IMU's own orientation, used to bridge gaps
         self.t_map_base = None       # last GPS-derived base_link position
 
     def imuCb(self, msg: Imu):
         t = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
         wz = msg.angular_velocity.z - self.gyro_bias
 
+        q = msg.orientation
+        imu_yaw = math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+
         if self.last_imu_time is not None:
             dt = t - self.last_imu_time
+            dyaw = None
             if 0.0 < dt < 0.2:
+                dyaw = wz * dt
+            elif dt >= 0.2:
+                # IMU samples were dropped. The Warthog's IMU filter kept integrating
+                # on board, so its change in yaw is the rotation we missed. (Only the
+                # change is used: its absolute yaw is magnetometer-referenced.)
+                dyaw = wrap(imu_yaw - self.last_imu_yaw)
+                self.get_logger().warn(
+                    f"IMU gap of {dt:.2f} s, recovered {math.degrees(dyaw):.0f} deg from IMU orientation",
+                    throttle_duration_sec=2.0)
+            if dyaw is not None:
                 if self.heading is not None:
-                    self.heading = wrap(self.heading + wz * dt)
+                    self.heading = wrap(self.heading + dyaw)
                 # keep the initialisation samples aligned with the current heading
-                self.init_samples = [h + wz * dt for h in self.init_samples]
+                self.init_samples = [h + dyaw for h in self.init_samples]
         self.last_imu_time = t
+        self.last_imu_yaw = imu_yaw
         self.yaw_rate += 0.3 * (wz - self.yaw_rate)
 
         if self.heading is not None:
