@@ -385,6 +385,32 @@ class LinakChannel:
         time.sleep(1.0)
         print('LINAK ready.')
 
+    def disarm_watchdog(self) -> None:
+        """
+        Tell the actuator to stop expecting a master heartbeat.
+
+        initialize() arms the consumer-heartbeat watchdog (0x1016 sub1) at
+        500 ms. This process's heartbeat thread is a daemon, so without this
+        call the heartbeats stop dead at exit while the node is still waiting
+        for them: it fires EMCY 0x8130, drops to PRE-OPERATIONAL and latches an
+        error, and the next process to talk to it gets 'No SDO response
+        received' for reasons that have nothing to do with wiring. That is a
+        prime suspect for the 10/6 field test, where the ROS launch died on its
+        first SDO eight minutes after this test had driven the same actuator
+        without complaint.
+
+        Must be called while heartbeats are STILL flowing, i.e. before
+        stop_hb.set().
+        """
+        try:
+            self.node.sdo[0x1016][1].raw = 0     # 0 = no consumer heartbeat
+            time.sleep(0.1)
+        except Exception as exc:
+            print(f'⚠  Could not disarm the consumer-heartbeat watchdog: '
+                  f'{exc}')
+            print('   Power-cycle the LINAK before the next run, or it may '
+                  'refuse to answer SDO.')
+
     def _on_tpdo(self, can_id: int, data: bytes, timestamp: float) -> None:
         if len(data) < 7:
             return
@@ -877,6 +903,9 @@ def main() -> None:
         linak.stop()
         time.sleep(0.3)
         ard.stop()
+        # Order matters: disarm the node's heartbeat watchdog while we are still
+        # sending heartbeats, THEN stop sending them.
+        linak.disarm_watchdog()
         stop_hb.set()
         time.sleep(0.15)
         try:

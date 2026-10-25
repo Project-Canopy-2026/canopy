@@ -6,7 +6,11 @@ import threading
 
 # === Configuration ===
 CHANNEL = 'can1'
-NODE_ID = 0x20 # 33 for chute
+# 0x20 = LINAK 1 (auger), 0x21 = LINAK 2 (chute). Override from the command
+# line — `python3 can_tests.py 0x21` — so checking the other actuator does not
+# mean editing this file (and forgetting to edit it back).
+import sys
+NODE_ID = int(sys.argv[1], 0) if len(sys.argv) > 1 else 0x20
 COB_ID_RPDO1 = 0x200 + NODE_ID
 COB_ID_TPDO1 = 0x180 + NODE_ID  # position feedback (object 0x2001), every 250 ms by default
 BOOTUP_COB_ID = 0x700 + NODE_ID
@@ -137,8 +141,28 @@ monitor(10)
 # monitor(0.5)
 
 # === Shutdown ===
+# Leave the actuator in a state the NEXT process can work with.
+#
+# This script arms the node's consumer-heartbeat watchdog (0x1016 sub1) and then
+# used to just exit: the heartbeat thread died with the process while the node
+# was still expecting 0x701 every 500 ms. The node then fires EMCY 0x8130, drops
+# to PRE-OPERATIONAL and latches an error — and the next thing to come along
+# finds it unresponsive for reasons that have nothing to do with wiring. That is
+# a prime suspect for the 10/6 field test, where the ROS launch failed on its
+# first SDO eight minutes after a unit-test run had driven the same actuator
+# perfectly.
+#
+# So: disarm the watchdog FIRST, while heartbeats are still flowing, and only
+# then stop sending them.
 print("Disconnecting...")
-# stop_heartbeat.set()
-# time.sleep(0.1)  # Let heartbeat thread exit cleanly
+try:
+    node.sdo[0x1016][1].raw = 0          # 0 = expect no consumer heartbeat
+    time.sleep(0.1)
+except Exception as e:
+    print(f"⚠  Could not disarm the consumer-heartbeat watchdog: {e}")
+    print("   Power-cycle the actuator before the next run, or it may refuse "
+          "to answer.")
+stop_heartbeat.set()
+time.sleep(0.1)  # Let heartbeat thread exit cleanly
 network.disconnect()
 print("✅ Done.")

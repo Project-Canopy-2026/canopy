@@ -314,17 +314,43 @@ hard-coded — see [Not adjustable at launch](#not-adjustable-at-launch).
 
 ### CAN init fails
 
+**Run the diagnostic first.** It is read-only — nothing moves — and it separates
+six faults that all surface as the same `No SDO response received`:
+
 ```bash
-ip link show can1                 # UP? right bitrate?
-candump can1                      # any traffic at all?
+python3 src/canopy/src/planting/unit_test/can_tests/can_bus_check.py
+python3 .../can_bus_check.py --channel can0    # if can1 comes back silent
+python3 .../can_bus_check.py --scan            # if an actuator may be relabelled
 ```
 
-- `SdoCommunicationError: No SDO response received` — the actuators are not
-  answering. Power (bike batteries, E-stop released), termination, and wiring,
-  in that order. There is a worked example of this failure in
-  [`unit_test/fsr/README.md`](unit_test/fsr/README.md).
-- `Cannot find 'LINAK-actuator-v3-1.eds'` — rebuild; the EDS is installed into
-  `share/planting_controller/eds/`.
+It prints every CAN interface with its driver, link state, real bitrate and
+restart-ms; listens for each actuator to announce itself; reads one read-only
+object per node id; and names the cause it found. Exit status is 0 only if every
+actuator answered.
+
+`linak_can_node` now logs the same interface facts at startup, and listens for
+each actuator before sending it anything — so the launch log itself says which
+node id went silent, which the 10/6 log could not.
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `node 0x21 is SILENT` but 0x20 is fine | that actuator is absent from the bus | Its power (bike batteries, E-stop released), its CAN connector, then its node id. **No passing test in this repo has ever addressed 0x21** — `can_tests.py` and `planting_fsr_test.py` both default to 0x20 |
+| `NOTHING was heard on 'can1'` | wrong interface, bus-off, or wrong bitrate | Re-run the diagnostic against every interface it lists. A single-channel Kvaser commonly enumerates as `can0` while everything here defaults to `can1` |
+| `EMCY 0x8130` in the log | the actuator was left armed by a previous run and latched an error | Power-cycle that actuator. Current code disarms the watchdog on shutdown, so this should only bite after a `kill -9` or an older build |
+| iface reports `BUS-OFF` | it still reports UP and still accepts writes that never reach the wire | Cycle the link, and bring it up with `restart-ms 100` so the next one self-recovers |
+| iface bitrate ≠ 125000 | python-can **ignores** the bitrate the node passes — it comes from `ip link` | `sudo ip link set can1 down && sudo ip link set can1 up type can bitrate 125000 restart-ms 100` |
+| `SDO request`/`RPDO1` from another master | a leftover unit test or launch still owns the bus | `pgrep -af "planting_fsr_test\|can_tests\|linak\|ros2 launch"` |
+| `Cannot find 'LINAK-actuator-v3-1.eds'` | not installed | Rebuild; the EDS goes to `share/planting_controller/eds/` |
+
+Prefer `restart-ms 100` whenever bringing the interface up — it turns a bus-off
+from a permanent, silent failure into a transient one:
+
+```bash
+sudo ip link set can1 up type can bitrate 125000 restart-ms 100
+```
+
+There is a worked example of the raw failure in
+[`unit_test/fsr/README.md`](unit_test/fsr/README.md).
 
 ### The FSM reaches FAULT
 
@@ -610,16 +636,38 @@ assumption is what turned a short home into a false obstacle abort.
 
 | Reply | Meaning |
 |---|---|
-| `READY:LINAK` | Both actuators initialised, published once at startup |
+| `READY:LINAK` | Both actuators initialised, published once at startup. **Not published if either actuator failed to come up** |
 | `ACK:LINAK<n>` | Command accepted |
 | `DONE:LINAK<n>,<cm>` | Reached the commanded target |
 | `STALL:LINAK<n>,<cm>` | Stopped short against something solid |
 | `STOPPED:LINAK<n>,<cm>` | Aborted by an explicit `STOP` |
-| `ERR:LINAK<n>:<detail>` | Fault — **sends the FSM to FAULT** |
+| `ERR:LINAK<n>:<detail>` | Fault — **sends the FSM to FAULT**. Also published when that actuator fails to initialise, or is commanded while unavailable |
 
 **Every terminal reply carries the distance actually travelled**, which is what
 makes the obstacle retract safe: a drill that stalled 15 cm into a commanded
 30 cm is retracted 15 cm, not 30.
+
+### When an actuator does not answer
+
+Bring-up is fault-isolated per actuator. An actuator that does not answer its
+first SDO is **absent from the bus** — unpowered, unwired, or not at the node id
+the driver is addressing. `linak_can_node` retries that SDO three times, then
+disables just that channel, logs
+`[LINAK<n>] DISABLED (node 0x__) — ...` plus a `DEGRADED` summary, and stays up
+so the other actuator can still be driven by hand over `/linak_cmd`.
+
+It deliberately does **not** print `both actuators initialised` in that state, so
+`planting_bringup.launch.py` never starts `planting_fsm` on a rig that cannot
+finish the sequence. To find the missing node, watch the bus while driving one id
+at a time:
+
+```bash
+candump can1                                  # in another terminal
+python3 src/planting/unit_test/can_tests/can_tests.py   # NODE_ID at the top
+```
+
+A live node answers an SDO request to `0x6NN` with `0x5NN`. Silence means that id
+is not out there.
 
 ## Repo structure
 
