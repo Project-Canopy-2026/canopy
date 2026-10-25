@@ -9,14 +9,14 @@ October 2026.
 **The auger arm** pushes a spinning drill bit into the ground to make a hole.
 It is the arm called LINAK 1.
 
-**The chute arm** lowers a tube that a seedling drops through. It is LINAK 2.
+**The tamper** presses the soil down around the seedling. It is LINAK 2.
 
-**The slider** moves sideways so that either the auger or the chute sits over
+**The slider** moves sideways so that either the auger or the tamper sits over
 the same spot. Both tools share one hole.
 
 **The force sensor** (an FSR) sits under the auger and reads how hard the
 machine is pushing back against the ground. It reads as a voltage: more force,
-higher voltage. It is on the auger arm only. The chute has none.
+higher voltage. It is on the auger arm only. The tamper has none.
 
 Both arms report their own position back over the CAN bus, so the software
 always knows where each one actually is.
@@ -38,11 +38,12 @@ The rover drives to a seedling, stops, and says "plant here." Then:
 4. **Dwell** — it sits at the bottom for 5 seconds with the auger still
    turning, to clear the hole out.
 5. **Pull out** — the auger arm comes back up, quickly, still spinning.
-6. **Slide to chute** — the auger stops and the slider moves the chute over
-   the hole.
-7. **Wait for seedling** — the arm drops a seedling down the tube.
-8. **Chute down, chute up** — the tube lowers to the ground, the seedling goes
-   in, the tube comes back up.
+6. **Slide to tamper** — the auger stops and the slider moves the tamper over
+   the hole (state `SHIFT_TO_CHUTE`, topic `/chute_in_position`; names kept
+   for the arm).
+7. **Wait for seedling** — the arm puts a seedling in the hole.
+8. **Tamp twice** — the tamper presses down, lifts half the tamp depth, presses down
+   to the same depth again, then comes all the way back up.
 9. **Slide back** — the slider returns to the auger position.
 10. **Done** — back to idle, ready for the next site.
 
@@ -100,7 +101,7 @@ The same physical event — arm pushing, nothing moving — means different thin
 depending on which arm it is:
 
 - **Auger arm stalls while drilling** → there is a rock, abort.
-- **Chute arm stalls** → the tube has touched the ground. That is the normal
+- **Tamper stalls on a press** → it has met the soil. That is the normal
   way it finishes, so carry on.
 - **Either arm stalls on a full pull-back** → it reached its end stop, which
   is exactly where it was going. Counts as finished.
@@ -128,7 +129,7 @@ block in `planting_fsm.py`. They are not launch arguments.
 | `fsr_poll_hz` | How often the sensor is read |
 | `drilling_distance_cm` | How deep to drill |
 | `drilling_dwell` | Seconds to sit at the bottom |
-| `chute_distance_cm` | How far the chute lowers |
+| `tamping_distance_cm` | How far the tamper lowers (LINAK 2); it presses twice and lifts half this in between |
 | `auger_rpm` | Auger speed |
 
 ## What is not proven yet

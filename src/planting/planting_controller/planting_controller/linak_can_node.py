@@ -1128,7 +1128,7 @@ class LinakDriver(Node):
         only when every actuator really did come up. A degraded node stays
         alive and diagnosable (its working actuator can still be driven by hand
         over /linak_cmd) but will not let the FSM start a sequence whose
-        CHUTE_DOWN step has nothing to drive.
+        TAMPING steps have nothing to drive.
         """
         if not self._failed:
             self._publish_status("READY:LINAK")

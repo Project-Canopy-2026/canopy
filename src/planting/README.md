@@ -197,17 +197,19 @@ Press `p`. You should see this, in this order:
 | 5 | `AUGER_RETRACT` | LINAK 1 home, FAST, still spinning | `DONE:LINAK1` | ~14 s |
 | 6 | `SHIFT_TO_CHUTE` | auger stops, stepper 23 cm left | `DONE:STEPPER` | ~10 s |
 | 7 | `WAIT_SEEDLING` | nothing — `/chute_in_position` published | `seedling_dropped` | you / the arm |
-| 8 | `CHUTE_DOWN` | LINAK 2 to 20 cm, FAST | `DONE:LINAK2` or `STALL` | ~9 s |
-| 9 | `CHUTE_RETRACT` | LINAK 2 home | `DONE:LINAK2` | ~9 s |
-| 10 | `SHIFT_TO_AUGER` | stepper 23 cm right | `DONE:STEPPER` | ~10 s |
-| 11 | `COMPLETE` → `IDLE` | all stop, ready for the next `p` | — | — |
+| 8 | `TAMPING_DOWN_1` | LINAK 2 (tamper) to `tamping_distance_cm`, FAST | `DONE:LINAK2` or `STALL` | ~9 s |
+| 9 | `TAMPING_LIFT` | LINAK 2 up half of `tamping_distance_cm` from where it stopped | `DONE:LINAK2` | ~5 s |
+| 10 | `TAMPING_DOWN_2` | LINAK 2 to `tamping_distance_cm` again | `DONE:LINAK2` or `STALL` | ~5 s |
+| 11 | `TAMPING_RETRACT` | LINAK 2 home | `DONE:LINAK2` | ~9 s |
+| 12 | `SHIFT_TO_AUGER` | stepper 23 cm right | `DONE:STEPPER` | ~10 s |
+| 13 | `COMPLETE` → `IDLE` | all stop, ready for the next `p` | — | — |
 
-**≈90 s end to end**, excluding however long step 7 waits.
+**≈110 s end to end**, excluding however long step 7 waits.
 
 Two things that look wrong but are not:
 
-- **`STALL:LINAK2` in step 8 is normal.** The chute arm is *supposed* to stop
-  when the tube touches the ground; a stall there is how the move finishes.
+- **`STALL:LINAK2` in step 8 or 10 is normal.** The tamper is *supposed* to stop
+  when it presses on the soil; a stall there is how the move finishes.
 - **`STALL:LINAK1` in step 1 (or 5) is normal.** A full retraction ends at the
   end stop, which is exactly where it was going.
 
@@ -274,7 +276,7 @@ and the other out. The launch file does not pass these, so passing e.g.
 |---|---|
 | `drilling_distance_cm` | drill depth from home; clamped to the 30 cm stroke |
 | `drilling_dwell` | seconds spinning at the bottom |
-| `chute_distance_cm` | chute depth from home |
+| `tamping_distance_cm` | tamp depth from home (LINAK 2), pressed twice; lifts half of it in between |
 | `shift_distance_cm` | measured auger ↔ chute spacing — don't guess |
 | `auger_rpm` | BLDC rated speed |
 | `fsr_abort_voltage` | **uncalibrated** |

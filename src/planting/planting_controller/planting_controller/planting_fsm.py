@@ -19,8 +19,10 @@ class State(enum.Enum):
     AUGER_RETRACT   = 'AUGER_RETRACT'   # bldc still spinning, linak_1 HOME [transition: DONE:LINAK1]
     SHIFT_TO_CHUTE  = 'SHIFT_TO_CHUTE'  # bldc stops, stepper moves shift_distance_cm [transition: DONE:STEPPER → publish /chute_in_position]
     WAIT_SEEDLING   = 'WAIT_SEEDLING'   # wait for seedling_dropped topic [transition: seedling_dropped]
-    CHUTE_DOWN      = 'CHUTE_DOWN'      # linak_2 GOTO chute_distance_cm [transition: DONE:LINAK2 or STALL]
-    CHUTE_RETRACT   = 'CHUTE_RETRACT'   # linak_2 HOME [transition: DONE:LINAK2]
+    TAMPING_DOWN_1  = 'TAMPING_DOWN_1'  # linak_2 GOTO tamping_distance_cm [transition: DONE:LINAK2 or STALL]
+    TAMPING_LIFT    = 'TAMPING_LIFT'    # linak_2 UP tamping_distance_cm / 2 [transition: DONE:LINAK2]
+    TAMPING_DOWN_2  = 'TAMPING_DOWN_2'  # linak_2 GOTO tamping_distance_cm again [transition: DONE:LINAK2 or STALL]
+    TAMPING_RETRACT = 'TAMPING_RETRACT' # linak_2 HOME [transition: DONE:LINAK2]
     SHIFT_TO_AUGER  = 'SHIFT_TO_AUGER'  # stepper returns [transition: DONE:STEPPER]
     COMPLETE        = 'COMPLETE'
     DIGGING_OBSTACLE = 'DIGGING_OBSTACLE'  # FSR over threshold or drill stalled: stop, HOME, skip this seedling [transition: STOPPED then DONE:LINAK1]
@@ -75,7 +77,8 @@ class PlantingFsmNode(Node):
     only place they are set; planting_bringup.launch.py does not pass them):
       drilling_distance_cm  float  LINAK_1 drill depth from home (cm)
       drilling_dwell        float  dwell in soil (s)
-      chute_distance_cm     float  LINAK_2 chute depth from home (cm)
+      tamping_distance_cm   float  LINAK_2 tamp depth from home (cm), pressed twice;
+                                   the lift between presses is half of it
       shift_distance_cm     float  stepper travel distance (cm) — speed locked at 270 RPM in firmware
       auger_rpm             int    BLDC RPM
       fsr_abort_voltage     float  abort the drill above this FSR voltage
@@ -88,7 +91,7 @@ class PlantingFsmNode(Node):
       sustained voltage at or above fsr_abort_voltage means the auger has met a
       rock or hard surface: the FSM enters DIGGING_OBSTACLE, stops LINAK_1,
       sends it HOME (auger still spinning so it does not jam), stops the auger
-      once clear, and returns to IDLE *without* shifting to the chute — nothing
+      once clear, and returns to IDLE *without* shifting to the tamper — nothing
       is planted at an obstructed site. A STALL:LINAK1 during DRILLING_DOWN
       takes the same path, covering obstacles the actuator gives up on before
       the FSR registers them. The threshold is UNCALIBRATED: the 12 initial
@@ -100,7 +103,7 @@ class PlantingFsmNode(Node):
       target to the stroke, so a command deeper than the actuator can go gives a
       shallower hole rather than a stall against the end stop that would be
       reported as an obstacle. Per-move speed: drilling down SLOW (1.09 cm/s,
-      0x64); auger retract and chute down/up FAST (2.18 cm/s, 0xCD).
+      0x64); auger retract and tamper FAST (2.18 cm/s, 0xCD).
     """
 
     def __init__(self):
@@ -111,7 +114,7 @@ class PlantingFsmNode(Node):
         # Retracts take no parameter: they go HOME.
         # self.declare_parameter('drilling_distance_cm', 28.0)
         # self.declare_parameter('drilling_dwell',       6.0)
-        # self.declare_parameter('chute_distance_cm',    18.0)
+        # self.declare_parameter('tamping_distance_cm',  18.0)
         # self.declare_parameter('shift_distance_cm',    23.0) # measured
         # self.declare_parameter('auger_rpm',            75)
 
@@ -126,7 +129,7 @@ class PlantingFsmNode(Node):
         # ── INDOOR PARAMS ────────────────────────────────────────────────────
         self.declare_parameter('drilling_distance_cm', 5.0)
         self.declare_parameter('drilling_dwell',       6.0)
-        self.declare_parameter('chute_distance_cm',    5.0)
+        self.declare_parameter('tamping_distance_cm',  5.0)
         self.declare_parameter('shift_distance_cm',    23.0) # measured
         self.declare_parameter('auger_rpm',            75)
         self.declare_parameter('fsr_abort_voltage',    2.5)
@@ -174,7 +177,7 @@ class PlantingFsmNode(Node):
         with self._lock:
             if self._state != State.WAIT_SEEDLING:
                 return
-        self._enter(State.CHUTE_DOWN)
+        self._enter(State.TAMPING_DOWN_1)
 
     def _on_arduino_status(self, msg: String):
         token = msg.data.strip()
@@ -262,12 +265,16 @@ class PlantingFsmNode(Node):
             pass        # homing advances on its own timer
 
     def _on_linak2(self, outcome: str, state: State):
-        """Chute actuator. A stall here is the chute grounding — expected."""
+        """Tamper actuator. A stall on a press is the tamper meeting soil — expected."""
         if outcome not in ('DONE', 'STALL'):
             return
-        if state == State.CHUTE_DOWN:
-            self._enter(State.CHUTE_RETRACT)
-        elif state == State.CHUTE_RETRACT:
+        if state == State.TAMPING_DOWN_1:
+            self._enter(State.TAMPING_LIFT)
+        elif state == State.TAMPING_LIFT:
+            self._enter(State.TAMPING_DOWN_2)
+        elif state == State.TAMPING_DOWN_2:
+            self._enter(State.TAMPING_RETRACT)
+        elif state == State.TAMPING_RETRACT:
             self._enter(State.SHIFT_TO_AUGER)
 
     # ── State machine ─────────────────────────────────────────────────────
@@ -403,12 +410,19 @@ class PlantingFsmNode(Node):
         elif state == State.WAIT_SEEDLING:
             self.get_logger().info('Waiting for seedling_dropped...')
 
-        elif state == State.CHUTE_DOWN:
-            depth = p('chute_distance_cm').get_parameter_value().double_value
+        elif state in (State.TAMPING_DOWN_1, State.TAMPING_DOWN_2):
+            depth = p('tamping_distance_cm').get_parameter_value().double_value
             self._linak(f'LINAK,2,GOTO,{depth:.2f},FAST')
-            # advances on DONE:LINAK2 — or STALL, which is the tube grounding
+            # advances on DONE:LINAK2 — or STALL, the tamper hitting soil
 
-        elif state == State.CHUTE_RETRACT:
+        elif state == State.TAMPING_LIFT:
+            # Relative, so it lifts from wherever the press stopped on the soil.
+            # Half the depth, so it can never lift past home.
+            lift = p('tamping_distance_cm').get_parameter_value().double_value / 2.0
+            self._linak(f'LINAK,2,UP,{lift:.2f},FAST')
+            # advances on DONE:LINAK2
+
+        elif state == State.TAMPING_RETRACT:
             self._linak('LINAK,2,HOME')
             # advances on DONE:LINAK2
 
