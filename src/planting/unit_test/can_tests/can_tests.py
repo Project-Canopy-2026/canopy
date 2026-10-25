@@ -11,6 +11,7 @@ CHANNEL = 'can1'
 # mean editing this file (and forgetting to edit it back).
 import sys
 NODE_ID = int(sys.argv[1], 0) if len(sys.argv) > 1 else 0x20
+NODE_ID = 0x20
 COB_ID_RPDO1 = 0x200 + NODE_ID
 COB_ID_TPDO1 = 0x180 + NODE_ID  # position feedback (object 0x2001), every 250 ms by default
 BOOTUP_COB_ID = 0x700 + NODE_ID

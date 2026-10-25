@@ -15,14 +15,15 @@ launched node does not get. Run it in its own terminal:
 
     ros2 run planting_controller planting_fsm_test
 
-Every number worth changing in the field is a launch argument, so a depth or
-threshold change needs no rebuild:
+FSM tuning (depths, dwell, RPM, FSR abort) is set ONLY in planting_fsm.py
+(the INDOOR / OUTDOOR PARAMS block in __init__). This file deliberately does
+not pass those parameters, so there is one place to change them. With
+--symlink-install an edit there takes effect on the next launch.
+
+Hardware settings remain launch arguments:
 
     ros2 launch planting_controller planting_bringup.launch.py \
-        drilling_distance_cm:=20.0 fsr_abort_voltage:=3.5
-
-    ros2 launch planting_controller planting_bringup.launch.py \
-        arduino_port:=/dev/ttyACM1 drilling_dwell:=2.0
+        arduino_port:=/dev/ttyACM1 can_channel:=can0
 
 See `ros2 launch planting_controller planting_bringup.launch.py -s` for the
 full list with defaults.
@@ -39,29 +40,16 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 # ── Launch arguments ─────────────────────────────────────────────────────────
 # (name, default, description) — declared below and wired into the nodes.
-# Defaults mirror the in-code defaults of each node, so launching with no
-# arguments behaves exactly as running the three nodes by hand.
+# Hardware only. FSM tuning lives in planting_fsm.py and is not passed here.
 _ARGS = [
     # Arduino / serial
-    ('arduino_port',  '/dev/ttyACM0', 'Arduino serial port. A udev rule for '
-                                      '/dev/arduino exists — see note below.'),
+    ('arduino_port',  '/dev/arduino', 'Arduino serial port. /dev/arduino is a '
+                                      'udev symlink — see note below.'),
     ('arduino_baud',  '115200',       'Arduino baud rate; must match '
                                       'planting_arduino.ino Serial.begin()'),
     # CAN / LINAK
     ('can_channel',   'can1',         'SocketCAN interface the LINAKs are on'),
     ('can_bitrate',   '125000',       'LINAK CAN bitrate'),
-    # Motion
-    ('drilling_distance_cm', '30.0',  'Drill depth, cm from home. Clamped to the '
-                                      '30 cm stroke by the driver'),
-    ('drilling_dwell',       '5.0',   'Seconds spinning at the bottom of the hole'),
-    ('chute_distance_cm',    '20.0',  'Chute depth, cm from home'),
-    ('shift_distance_cm',    '23.0',  'Stepper travel auger ↔ chute (cm, measured)'),
-    ('auger_rpm',            '75',    'BLDC auger speed (RPM)'),
-    # Obstacle abort
-    ('fsr_abort_voltage',    '3.7',   'FSR voltage that counts as hitting '
-                                      'something. UNCALIBRATED — see WORKFLOW.md'),
-    ('fsr_abort_seconds',    '2.0',   'How long it must hold there before aborting'),
-    ('fsr_poll_hz',          '10.0',  'How often the FSR is read while drilling'),
 ]
 
 
@@ -101,8 +89,8 @@ def _on_output(event: ProcessIO, trigger_str: str, actions, latch: dict):
 #   SUBSYSTEM=="tty", ATTRS{idVendor}=="2341", SYMLINK+="arduino"
 # and applied it with:
 #   sudo udevadm control --reload-rules && sudo udevadm trigger
-# so the port can be given as arduino_port:=/dev/arduino and stop depending on
-# whether the board enumerated as ACM0 or ACM1.
+# so the default port is /dev/arduino and does not depend on whether the board
+# enumerated as ACM0 or ACM1. Pass arduino_port:=/dev/ttyACMx to override.
 serial_bridge = Node(
     package='planting_controller',
     executable='serial_bridge',
@@ -133,16 +121,8 @@ planting_fsm = Node(
     name='planting_fsm',
     output='screen',
     emulate_tty=True,
-    parameters=[{
-        'drilling_distance_cm': _param('drilling_distance_cm', float),
-        'drilling_dwell':       _param('drilling_dwell',       float),
-        'chute_distance_cm':    _param('chute_distance_cm',    float),
-        'shift_distance_cm':    _param('shift_distance_cm',    float),
-        'auger_rpm':            _param('auger_rpm',            int),
-        'fsr_abort_voltage':    _param('fsr_abort_voltage',    float),
-        'fsr_abort_seconds':    _param('fsr_abort_seconds',    float),
-        'fsr_poll_hz':          _param('fsr_poll_hz',          float),
-    }],
+    # No parameters: planting_fsm.py's declare_parameter defaults are the
+    # only source of FSM tuning.
 )
 
 

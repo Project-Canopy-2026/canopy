@@ -116,17 +116,20 @@ releases its hold on a flat 10-second timer, and a normal plant takes about 45
 seconds. So the rover already un-latches early on every plant, obstacle or not.
 That is a separate bug, left alone on purpose.
 
-## Settings you can change at launch
+## Settings you can change
 
-| Setting | Default | What it does |
-|---|---|---|
-| `fsr_abort_voltage` | 3.7 | Force reading that counts as hitting something |
-| `fsr_abort_seconds` | 2.0 | How long it must stay there before aborting |
-| `fsr_poll_hz` | 10.0 | How often the sensor is read |
-| `drilling_distance_cm` | 30.0 | How deep to drill |
-| `drilling_dwell` | 5.0 | Seconds to sit at the bottom |
-| `chute_distance_cm` | 20.0 | How far the chute lowers |
-| `auger_rpm` | 75 | Auger speed |
+All of these are set in one place only: the `INDOOR PARAMS` / `OUTDOOR PARAMS`
+block in `planting_fsm.py`. They are not launch arguments.
+
+| Setting | What it does |
+|---|---|
+| `fsr_abort_voltage` | Force reading that counts as hitting something |
+| `fsr_abort_seconds` | How long it must stay there before aborting |
+| `fsr_poll_hz` | How often the sensor is read |
+| `drilling_distance_cm` | How deep to drill |
+| `drilling_dwell` | Seconds to sit at the bottom |
+| `chute_distance_cm` | How far the chute lowers |
+| `auger_rpm` | Auger speed |
 
 ## What is not proven yet
 

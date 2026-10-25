@@ -71,15 +71,16 @@ class PlantingFsmNode(Node):
       /linak_cmd       (std_msgs/String) — commands to LINAK actuators
       planting_state   (std_msgs/String) — current FSM state name
 
-    Parameters:
-      drilling_distance_cm  float  30.0  LINAK_1 drill depth from home (cm)
-      drilling_dwell        float  5.0   dwell in soil (s)
-      chute_distance_cm     float  20.0  LINAK_2 chute depth from home (cm)
-      shift_distance_cm     float  5.0   stepper travel distance (cm) — speed locked at 270 RPM in firmware
-      auger_rpm             int    75    BLDC RPM
-      fsr_abort_voltage     float  3.7   abort the drill above this FSR voltage
-      fsr_poll_hz           float  10.0  how often to poll the FSR while drilling
-      fsr_abort_seconds     float  2.0   sustained time over threshold before aborting
+    Parameters (values: the INDOOR / OUTDOOR PARAMS block in __init__ — the
+    only place they are set; planting_bringup.launch.py does not pass them):
+      drilling_distance_cm  float  LINAK_1 drill depth from home (cm)
+      drilling_dwell        float  dwell in soil (s)
+      chute_distance_cm     float  LINAK_2 chute depth from home (cm)
+      shift_distance_cm     float  stepper travel distance (cm) — speed locked at 270 RPM in firmware
+      auger_rpm             int    BLDC RPM
+      fsr_abort_voltage     float  abort the drill above this FSR voltage
+      fsr_poll_hz           float  how often to poll the FSR while drilling
+      fsr_abort_seconds     float  sustained time over threshold before aborting
 
     Obstacle abort:
       While DRILLING_DOWN or DRILLING_DWELL the node polls the Arduino with
@@ -130,7 +131,7 @@ class PlantingFsmNode(Node):
         self.declare_parameter('auger_rpm',            75)
         self.declare_parameter('fsr_abort_voltage',    2.5)
         self.declare_parameter('fsr_poll_hz',          10.0)
-        self.declare_parameter('fsr_abort_seconds',    2.0)
+        self.declare_parameter('fsr_abort_seconds',    1.0)
 
         # ── Publishers ────────────────────────────────────────────────────
         self._arduino_pub    = self.create_publisher(String, '/arduino_cmd',        10)

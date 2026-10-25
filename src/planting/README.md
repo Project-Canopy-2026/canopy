@@ -17,8 +17,8 @@ this file is the operating procedure.
 >    the field 12 times, so the *mechanism* is proven; its use from the ROS driver
 >    is not. See [Position scale](#position-scale) for what was wrong before.
 >
-> First run of the day: use `drilling_distance_cm:=5.0` and watch
-> `/linak_status`. Full depth once you have seen one clean cycle.
+> First run of the day: use the INDOOR PARAMS block in `planting_fsm.py`
+> (`drilling_distance_cm` 5.0) and watch `/linak_status`. Full depth once you have seen one clean cycle.
 
 ---
 
@@ -129,18 +129,15 @@ Wait for all three banners:
 If the chain stalls, whichever banner is missing tells you which layer failed —
 see [Troubleshooting](#troubleshooting).
 
-**With non-default hardware or tuning:**
+**With non-default hardware:**
 
 ```bash
 ros2 launch planting_controller planting_bringup.launch.py \
-    arduino_port:=/dev/ttyACM1 \
-    drilling_distance_cm:=20.0 \
-    fsr_abort_voltage:=3.9
+    arduino_port:=/dev/ttyACM1
 ```
 
-Every tunable is a launch argument — no rebuild to change a depth or a
-threshold. Full list: `ros2 launch planting_controller planting_bringup.launch.py -s`,
-or [Tuning knobs](#tuning-knobs) below.
+Depths, dwell, RPM and the FSR abort are **not** launch arguments — they are
+set only in `planting_fsm.py`. See [Tuning knobs](#tuning-knobs) below.
 
 ### Terminal 2 — the trigger
 
@@ -251,7 +248,7 @@ the navigation hold and the rover moves on.
 so it clears every drill ever recorded. No rock or wood strike has ever been
 logged. Two consequences for the field:
 
-- **False abort in ordinary soil?** Raise it: `fsr_abort_voltage:=3.9`. Hard soil
+- **False abort in ordinary soil?** Raise `fsr_abort_voltage` in `planting_fsm.py` (e.g. 3.9). Hard soil
   reading high is the likely failure mode, and the log will show it.
 - **Drilled straight into a rock without aborting?** Force may simply not be the
   right signal — in those same trials the `pot` and `plastic` runs peaked at
@@ -267,36 +264,36 @@ which writes a CSV you can plot afterwards.
 
 ## Tuning knobs
 
-All are launch arguments on `planting_bringup.launch.py`:
+**FSM tuning is set in one place only:** the `INDOOR PARAMS` / `OUTDOOR PARAMS`
+block in `planting_controller/planting_fsm.py` `__init__`. Comment one block in
+and the other out. The launch file does not pass these, so passing e.g.
+`drilling_distance_cm:=12.0` to `ros2 launch` does nothing. With
+`--symlink-install`, an edit takes effect on the next launch, no rebuild.
 
-```bash
-ros2 launch planting_controller planting_bringup.launch.py drilling_distance_cm:=12.0
-```
+| Parameter | Notes |
+|---|---|
+| `drilling_distance_cm` | drill depth from home; clamped to the 30 cm stroke |
+| `drilling_dwell` | seconds spinning at the bottom |
+| `chute_distance_cm` | chute depth from home |
+| `shift_distance_cm` | measured auger ↔ chute spacing — don't guess |
+| `auger_rpm` | BLDC rated speed |
+| `fsr_abort_voltage` | **uncalibrated** |
+| `fsr_abort_seconds` | |
+| `fsr_poll_hz` | |
+
+Hardware settings stay launch arguments on `planting_bringup.launch.py`:
 
 | Argument | Default | Notes |
 |---|---|---|
-| `arduino_port` | `/dev/ttyACM0` | or `/dev/arduino` with the udev rule |
+| `arduino_port` | `/dev/arduino` | udev symlink; pass `/dev/ttyACMx` to override |
 | `arduino_baud` | `115200` | must match the sketch |
 | `can_channel` | `can1` | where the LINAKs are; leave it alone |
 | `can_bitrate` | `125000` | |
-| `drilling_distance_cm` | `30.0` | drill depth from home; clamped to the 30 cm stroke |
-| `drilling_dwell` | `5.0` | seconds spinning at the bottom |
-| `chute_distance_cm` | `20.0` | |
-| `shift_distance_cm` | `23.0` | measured auger ↔ chute spacing — don't guess |
-| `auger_rpm` | `75` | BLDC rated speed |
-| `fsr_abort_voltage` | `3.7` | **uncalibrated** |
-| `fsr_abort_seconds` | `2.0` | |
-| `fsr_poll_hz` | `10.0` | |
 
-A **short, shallow first run** is the cheap way to shake out wiring and
-direction errors before committing to a 30 cm hole:
+A **short, shallow first run** (the INDOOR block) is the cheap way to shake out
+wiring and direction errors before committing to a 30 cm hole.
 
-```bash
-ros2 launch planting_controller planting_bringup.launch.py \
-    drilling_distance_cm:=5.0 drilling_dwell:=2.0
-```
-
-Anything not in that table (the 5 s home wait, LINAK speeds, stepper RPM) is
+Anything not in those tables (the 5 s home wait, LINAK speeds, stepper RPM) is
 hard-coded — see [Not adjustable at launch](#not-adjustable-at-launch).
 
 ---
@@ -334,7 +331,7 @@ node id went silent, which the 10/6 log could not.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `node 0x21 is SILENT` but 0x20 is fine | that actuator is absent from the bus | Its power (bike batteries, E-stop released), its CAN connector, then its node id. **No passing test in this repo has ever addressed 0x21** — `can_tests.py` and `planting_fsr_test.py` both default to 0x20 |
+| `node 0x21 sent nothing unprompted`, then `[LINAK2] DISABLED ... configure failed` | that actuator is absent from the bus (the silence warning alone is harmless — these LINAKs stay quiet until addressed) | Its power (bike batteries, E-stop released), its CAN connector, then its node id |
 | `NOTHING was heard on 'can1'` | wrong interface, bus-off, or wrong bitrate | Re-run the diagnostic against every interface it lists. A single-channel Kvaser commonly enumerates as `can0` while everything here defaults to `can1` |
 | `EMCY 0x8130` in the log | the actuator was left armed by a previous run and latched an error | Power-cycle that actuator. Current code disarms the watchdog on shutdown, so this should only bite after a `kill -9` or an older build |
 | iface reports `BUS-OFF` | it still reports UP and still accepts writes that never reach the wire | Cycle the link, and bring it up with `restart-ms 100` so the next one self-recovers |

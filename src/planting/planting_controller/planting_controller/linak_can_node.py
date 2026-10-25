@@ -570,14 +570,15 @@ class ActuatorChannel:
                 f"(heard {cobs})."
             )
             return True
-        self._log.error(
-            f"[LINAK{lid}] node 0x{nid:02X} is SILENT — nothing received on "
+        # Not fatal: on 10/25 both LINAKs sat silent until asked (heartbeat
+        # producer off, still PRE-OPERATIONAL) yet answered SDO at once. The
+        # SDO retries in configure() are what decide absence.
+        self._log.warn(
+            f"[LINAK{lid}] node 0x{nid:02X} sent nothing unprompted on "
             f"0x{self.cob_tpdo1:03X} (TPDO1), 0x{self.cob_hb:03X} (heartbeat) "
             f"or 0x{self.cob_emcy:03X} (EMCY) in {_PRESENCE_WINDOW:.1f} s. "
-            f"It is absent "
-            f"from this bus, not slow: check its power and CAN wiring, confirm "
-            f"it is on this interface with `candump`, and confirm its node id "
-            f"is really 0x{nid:02X}."
+            f"Trying SDO anyway; if that fails too, check its power and CAN "
+            f"wiring and confirm its node id is really 0x{nid:02X}."
         )
         return False
 
@@ -1043,10 +1044,10 @@ class LinakDriver(Node):
         self._failed: dict[int, str] = {}
 
         # ── Phase 0: is anybody out there? ────────────────────────────────
-        # Listen before asking. An actuator that is powered and on this bus
-        # emits TPDO1 / heartbeat / boot-up frames unprompted, so a node that
-        # is silent here is absent — and saying that is far more use than three
-        # SDO timeouts and a traceback that does not name it.
+        # Listen before asking. This is diagnostic only: a LINAK that is still
+        # PRE-OPERATIONAL with its heartbeat producer off says nothing until
+        # it is addressed, so silence here is logged, not acted on. The SDO
+        # retries in Phase 1 decide whether an actuator is really absent.
         for ch in self._ch.values():
             ch.start_listening()
 
@@ -1055,21 +1056,18 @@ class LinakDriver(Node):
             f"announce themselves ..."
         )
         deadline = time.monotonic() + _PRESENCE_WINDOW
-        for lid, ch in list(self._ch.items()):
+        heard_any = False
+        for ch in self._ch.values():
             remaining = max(0.0, deadline - time.monotonic())
-            if not ch.wait_for_presence(remaining):
-                self._disable(lid, "silent on the bus (no TPDO/heartbeat/EMCY)")
+            heard_any |= ch.wait_for_presence(remaining)
 
-        if not self._ch:
-            # Nothing at all answered. That is a bus-level fault, not two
-            # independently dead actuators, and it has a different fix list.
-            self.get_logger().error(
-                f"NOTHING was heard on '{channel}'. Before suspecting the "
-                f"actuators, rule out the bus: `candump {channel}` (silent?), "
-                f"`ip -details -statistics link show {channel}` (BUS-OFF? "
-                f"bitrate {bitrate}?), and try the other CAN interfaces listed "
-                f"above. unit_test/can_tests/can_bus_check.py does all of this "
-                f"in one pass without ROS."
+        if not heard_any:
+            self.get_logger().warn(
+                f"Nothing unprompted on '{channel}' — continuing to SDO. If "
+                f"both actuators then fail, rule out the bus: `candump "
+                f"{channel}`, `ip -details -statistics link show {channel}` "
+                f"(BUS-OFF? bitrate {bitrate}?), or run "
+                f"unit_test/can_tests/can_bus_check.py."
             )
 
         # ── Two-phase init ────────────────────────────────────────────────
