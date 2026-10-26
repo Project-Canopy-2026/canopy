@@ -12,12 +12,15 @@
 //    "stepper,left,<mm>"      → stepper_move("left",  mm)   *CCW, speed locked at 270 RPM*
 //    "stepper,right,<mm>"     → stepper_move("right", mm)   *CW,  speed locked at 270 RPM*
 //    "stepper,stop"           → stepper_stop()
+//    "fsr,read"               → reads vertical ground force sensor (A0)
 //    "stop"                   → bldc_stop() + stepper_stop() immediately
 //
 //  Replies:
-//    "ACK:<cmd>"    – command received and dispatched
-//    "DONE:STEPPER" – step-counted stepper move completed
-//    "ERR:<reason>" – unknown or malformed command
+//    "ACK:<cmd>"              – command received and dispatched
+//    "DONE:STEPPER"           – step-counted stepper move completed
+//    "FSR:<voltage>,<ohms>"   – reply to "fsr,read" (raw only — no force
+//                               conversion; see FSR FUNCTIONS below)
+//    "ERR:<reason>"           – unknown or malformed command
 // ============================================================
 
 // ============================================================
@@ -36,6 +39,15 @@ const int  STEPS_PER_REV = 800;  // 200 base steps × 4 microsteps
 const float MM_PER_REV   = 5.0;  // SFU 1605 lead
 const float STEPS_PER_MM = STEPS_PER_REV / MM_PER_REV; // 160 steps/mm
 const int  STEPPER_RPM   = 270;  // locked speed
+
+// FSR (Interlink 34-00153, FSR UX strip) — vertical ground-reaction force on the auger
+// Sensing range 0.5N-150N; no published Force-vs-Resistance curve, so this
+// reports raw voltage/resistance only until calibrated with known weights.
+// Voltage divider, output rises with force: 5V --[FSR]--+--[5k RM]-- GND, tap at A0
+const int FSR_PIN = A0;
+const float FSR_RM = 5000.0; // measuring resistor, ohms
+const float ADC_VCC = 5.0;
+const float ADC_MAX = 1023.0;
 
 volatile long stepsRemaining = 0;
 volatile bool stepperDone    = false;
@@ -135,6 +147,31 @@ void stepper_stop()
 }
 
 // ============================================================
+//  FSR FUNCTIONS
+// ============================================================
+
+// Averages a few ADC reads to smooth sensor/ADC noise, returns volts at A0.
+float readFSRVoltage()
+{
+    long sum = 0;
+    const int samples = 8;
+    for (int i = 0; i < samples; i++)
+    {
+        sum += analogRead(FSR_PIN);
+    }
+    float raw = sum / (float)samples;
+    return raw * ADC_VCC / ADC_MAX;
+}
+
+// Vout = RM*VCC/(RM+Rfsr)  =>  Rfsr = RM*(VCC/Vout - 1)
+// Returns -1 to signal "open" (no measurable force) when voltage is ~0.
+float voltageToResistance(float voltage)
+{
+    if (voltage < 0.005) return -1;
+    return FSR_RM * (ADC_VCC / voltage - 1.0);
+}
+
+// ============================================================
 //  SERIAL COMMAND HANDLER
 // ============================================================
 
@@ -212,6 +249,22 @@ void handle_command(String cmd)
             send_error("UNKNOWN_STEPPER_CMD:" + action);
         }
     }
+    else if (motor == "fsr")
+    {
+        if (action == "read")
+        {
+            float voltage = readFSRVoltage();
+            float rfsr = voltageToResistance(voltage);
+            Serial.print("FSR:");
+            Serial.print(voltage, 3);
+            Serial.print(",");
+            Serial.println(rfsr, 0);
+        }
+        else
+        {
+            send_error("UNKNOWN_FSR_CMD:" + action);
+        }
+    }
     else
     {
         send_error("UNKNOWN_MOTOR:" + motor);
@@ -244,6 +297,9 @@ void setup()
     TCCR1B = (1 << WGM12);
     TCNT1 = 0;
     OCR1A = 65535;
+
+    // ── FSR ──────────────────────────────────────────────────
+    // Analog input, no pinMode()/init needed on Uno.
 
     Serial.println("READY");
 }

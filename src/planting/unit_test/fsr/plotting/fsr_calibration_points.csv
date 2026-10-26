@@ -1,0 +1,9 @@
+grams,v_steady,r_ohm,creep_pct,hold_s,file
+174,1.468,12030,11.0,305,calibration_174g.csv
+346,2.113,6832,85.3,312,calibration_346g.csv
+454,2.204,6343,76.6,366,calibration_454g.csv
+510,2.488,5048,6.1,296,calibration_510g.csv
+647,2.028,7327,20.8,315,calibration_647g.csv
+703,2.385,5482,53.5,360,calibration_703g.csv
+842,2.463,5150,24.7,368,calibration_842g.csv
+930,2.392,5452,4.9,515,calibration_930g.csv

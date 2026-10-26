@@ -1,11 +1,19 @@
 /ntrip_client:
   ros__parameters:
   
-    user: 'nkayiti@andrew.cmu.edu'
-    password: ''
-    server: 'rtk2go.com'
+    # Old rtk2go caster (this IP got banned for reconnecting too often)
+    # user: 'nkayiti@andrew.cmu.edu'
+    # password: ''
+    # server: 'rtk2go.com'
+    # port: 2101
+    # mountpoint: 'cmuairlab01'
+
+    # Emlid caster
+    user: 'u63376'
+    password: '928fjh'
+    server: 'caster.emlid.com'
     port: 2101
-    mountpoint: 'cmuairlab01'
+    mountpoint: 'MP30467'
 
     serial_port: '/dev/ttyUSB0'
     serial_baud: 115200
