@@ -112,9 +112,11 @@ class PlantingFsmNode(Node):
         # ── OUTDOOR PARAMS ────────────────────────────────────────────────────
         # Distances are absolute depths from home (0 cm = fully retracted).
         # Retracts take no parameter: they go HOME.
-        self.declare_parameter('drilling_distance_cm', 28.0)
+        # auger 30 cm, tamping 12 cm (110/26 field test downhill)
+        # max FSR seens around 3.3 V
+        self.declare_parameter('drilling_distance_cm', 30.0)        
         self.declare_parameter('drilling_dwell',       6.0)
-        self.declare_parameter('tamping_distance_cm',  8.0)
+        self.declare_parameter('tamping_distance_cm',  12.0)
         self.declare_parameter('shift_distance_cm',    23.0) # measured
         self.declare_parameter('auger_rpm',            75)
 
@@ -128,7 +130,7 @@ class PlantingFsmNode(Node):
 
         # ── INDOOR PARAMS ────────────────────────────────────────────────────
         # self.declare_parameter('drilling_distance_cm', 5.0)
-        # self.declare_parameter('drilling_dwell',       6.0)
+        # self.declare_parameter('drilling_dwell',       2.0)
         # self.declare_parameter('tamping_distance_cm',  5.0)
         # self.declare_parameter('shift_distance_cm',    23.0) # measured
         # self.declare_parameter('auger_rpm',            75)
@@ -418,7 +420,7 @@ class PlantingFsmNode(Node):
         elif state == State.TAMPING_LIFT:
             # Relative, so it lifts from wherever the press stopped on the soil.
             # Half the depth, so it can never lift past home.
-            lift = p('tamping_distance_cm').get_parameter_value().double_value / 2.0
+            lift = p('tamping_distance_cm').get_parameter_value().double_value
             self._linak(f'LINAK,2,UP,{lift:.2f},FAST')
             # advances on DONE:LINAK2
 
