@@ -112,29 +112,29 @@ class PlantingFsmNode(Node):
         # ── OUTDOOR PARAMS ────────────────────────────────────────────────────
         # Distances are absolute depths from home (0 cm = fully retracted).
         # Retracts take no parameter: they go HOME.
-        # self.declare_parameter('drilling_distance_cm', 28.0)
-        # self.declare_parameter('drilling_dwell',       6.0)
-        # self.declare_parameter('tamping_distance_cm',  8.0)
-        # self.declare_parameter('shift_distance_cm',    23.0) # measured
-        # self.declare_parameter('auger_rpm',            75)
-
-        # # FSR obstacle abort. UNCALIBRATED — no rock/wood strike has been logged yet.
-        # # The 12 initial field trials peaked at 3.559 V on workable soil, so 3.7 V
-        # # clears every recorded drill; the 3-sample debounce covers the rest of the
-        # # margin. Retune once a deliberate obstacle test exists.
-        # self.declare_parameter('fsr_abort_voltage',    3.5)
-        # self.declare_parameter('fsr_poll_hz',          10.0)
-        # self.declare_parameter('fsr_abort_seconds',    1.0)
-
-        # ── INDOOR PARAMS ────────────────────────────────────────────────────
-        self.declare_parameter('drilling_distance_cm', 5.0)
+        self.declare_parameter('drilling_distance_cm', 28.0)
         self.declare_parameter('drilling_dwell',       6.0)
-        self.declare_parameter('tamping_distance_cm',  5.0)
+        self.declare_parameter('tamping_distance_cm',  8.0)
         self.declare_parameter('shift_distance_cm',    23.0) # measured
         self.declare_parameter('auger_rpm',            75)
-        self.declare_parameter('fsr_abort_voltage',    2.5)
+
+        # FSR obstacle abort. UNCALIBRATED — no rock/wood strike has been logged yet.
+        # The 12 initial field trials peaked at 3.559 V on workable soil, so 3.7 V
+        # clears every recorded drill; the 3-sample debounce covers the rest of the
+        # margin. Retune once a deliberate obstacle test exists.
+        self.declare_parameter('fsr_abort_voltage',    3.5)
         self.declare_parameter('fsr_poll_hz',          10.0)
         self.declare_parameter('fsr_abort_seconds',    1.0)
+
+        # ── INDOOR PARAMS ────────────────────────────────────────────────────
+        # self.declare_parameter('drilling_distance_cm', 5.0)
+        # self.declare_parameter('drilling_dwell',       6.0)
+        # self.declare_parameter('tamping_distance_cm',  5.0)
+        # self.declare_parameter('shift_distance_cm',    23.0) # measured
+        # self.declare_parameter('auger_rpm',            75)
+        # self.declare_parameter('fsr_abort_voltage',    2.5)
+        # self.declare_parameter('fsr_poll_hz',          10.0)
+        # self.declare_parameter('fsr_abort_seconds',    1.0)
 
         # ── Publishers ────────────────────────────────────────────────────
         self._arduino_pub    = self.create_publisher(String, '/arduino_cmd',        10)
