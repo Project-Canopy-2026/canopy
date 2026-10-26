@@ -34,6 +34,7 @@ def generate_launch_description():
         launch_arguments={
             'robot_ip': '192.168.1.201',
             'hw_ns': 'xarm',
+            'show_rviz': 'false',
             #'xacro_file': PathJoinSubstitution([FindPackageShare('manipulation_pkg'), 'urdf', 'xarm7_gripper_camera.urdf.xacro']),
         }.items(),
     )

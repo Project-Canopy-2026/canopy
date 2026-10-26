@@ -1,6 +1,7 @@
 import numpy as np
 import rclpy
 from rclpy.node import Node, ParameterDescriptor, ParameterType
+from rclpy.time import Time
 from scipy.spatial.distance import pdist
 from matplotlib import pyplot as plt
 from tf2_ros.buffer import Buffer
@@ -112,6 +113,11 @@ class PlannerNode(Node):
         self.occ_map = None
         self.occ_info = None
 
+        # The lidar pipeline is stopped while planting, so after planting the last grid
+        # is stale. Don't drive until a grid stamped after planting ended arrives.
+        self.awaiting_fresh_occ = False
+        self.planting_end_time = None
+
         # Obstacle stop box, in base_link metres
         self.STOP_BOX_MIN_X = 1.0  # starts past the occupancy node's self-filter
         self.STOP_BOX_MAX_X = 3.0
@@ -128,6 +134,9 @@ class PlannerNode(Node):
         self.closest_point_bl_time = self.get_clock().now()
 
     def isPlantingCb(self, msg: Bool):
+        if self.is_planting and not msg.data:
+            self.awaiting_fresh_occ = True
+            self.planting_end_time = self.get_clock().now()
         self.is_planting = msg.data
 
     def isTurningDownhillCb(self, msg: Bool):
@@ -173,6 +182,11 @@ class PlannerNode(Node):
     def occCb(self, msg: OccupancyGrid):
         self.occ_map = np.asarray(msg.data).reshape(msg.info.height, msg.info.width)
         self.occ_info = msg.info
+
+        if self.awaiting_fresh_occ and Time.from_msg(msg.header.stamp) > self.planting_end_time:
+            self.awaiting_fresh_occ = False
+            waited = (self.get_clock().now() - self.planting_end_time).nanoseconds / 1e9
+            self.get_logger().info(f"Fresh obstacle data {waited:.1f} s after planting; resuming")
 
     def isObstacleAhead(self) -> bool:
         """True if enough occupied cells sit in a box directly ahead of the robot."""
@@ -630,6 +644,11 @@ class PlannerNode(Node):
         if self.remaining_seedling_count < 1:
             self.publishStatus("Plan complete.")
             self.twist_pub.publish(self.getSmoothed(Twist()))
+            return
+
+        if self.awaiting_fresh_occ:
+            self.twist_pub.publish(self.getSmoothed(Twist()))
+            self.publishStatus("Waiting for fresh obstacle data after planting", DiagnosticStatus.WARN)
             return
 
         if self.isObstacleAhead():
