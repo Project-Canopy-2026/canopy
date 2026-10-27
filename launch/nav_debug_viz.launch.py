@@ -57,9 +57,9 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        DeclareLaunchArgument("rviz", default_value="true", description="Start RViz2"),
+        DeclareLaunchArgument("rviz", default_value="false", description="Start RViz2"),
         DeclareLaunchArgument(
-            "foxglove", default_value="false", description="Start foxglove_bridge on port 8765"
+            "foxglove", default_value="true", description="Start foxglove_bridge on port 8765"
         ),
         nav_viz,
         rviz_node,
