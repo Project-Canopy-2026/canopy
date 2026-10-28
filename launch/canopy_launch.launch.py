@@ -37,8 +37,18 @@ def generate_launch_description():
         )
     )
 
+    visualization = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                '/home/teamj/dev/ros2_ws/src/canopy/launch/',
+                'viz.launch.py'
+            )
+        )
+    )
+
     return LaunchDescription([
         manipulation,
         trajectory_planner_obstacle_avoidance,
         planting,
+        visualization,
     ])
