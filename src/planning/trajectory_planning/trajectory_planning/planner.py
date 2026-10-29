@@ -2,6 +2,7 @@ import numpy as np
 import rclpy
 from rclpy.node import Node, ParameterDescriptor, ParameterType
 from rclpy.time import Time
+from rclpy.duration import Duration
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from scipy.spatial.distance import pdist
 from matplotlib import pyplot as plt
@@ -12,8 +13,9 @@ import utm
 import math
 from scipy.spatial.transform.rotation import Rotation as R
 from scipy import stats
-
 from skimage.draw import disk
+from scipy.ndimage import distance_transform_edt
+from skimage.graph import route_through_array
 
 # ROS2 message definitions
 # Subscribes to /odometry/gps from robot_localization, nav_msgs/Odometry
@@ -95,6 +97,7 @@ class PlannerNode(Node):
             TrajectoryCandidates, "/planning/candidates", 1
         )
         self.status_pub = self.create_publisher(DiagnosticStatus, "/diagnostics", 1)
+        self.detour_path_pub = self.create_publisher(Path, "/planning/detour_path", 1)
 
         self.generateCandidates()
 
@@ -123,17 +126,39 @@ class PlannerNode(Node):
 
         self.occ_map = None
         self.occ_info = None
+        self.occ_stamp = None  # header stamp of the latest grid
 
         # The lidar pipeline is stopped while planting, so after planting the last grid
         # is stale. Don't drive until a grid stamped after planting ended arrives.
         self.awaiting_fresh_occ = False
         self.planting_end_time = None
 
-        # Obstacle stop box, in base_link metres
+        # Obstacle stop box, in base_link meters
         self.STOP_BOX_MIN_X = 1.0  # starts past the occupancy node's self-filter
         self.STOP_BOX_MAX_X = 3.0
         self.STOP_BOX_HALF_WIDTH =  1.0 # robot half-width plus margin, (warthog width=1.34m)
         self.MIN_OBSTACLE_CELLS = 3  # reject single-point LiDAR noise
+
+        # Detour planning (meters)
+        self.NO_GO_RADIUS = 1.1        # > stop box half-width (1.0), so a planned path never trips the box
+        self.SOFT_WEIGHT = 3.0         # how strongly the path avoids the band outside no-go
+        self.SOFT_FALLOFF = 0.3        # how fast that soft cost fades (tuned: ~1.7 m clearance)
+        self.START_CLEAR_RADIUS = 1.0  # lets the search leave the robot's own spot
+        self.MAX_GOAL_SHIFT = 2.0      # if the seedling cell is blocked, accept a free cell this close
+
+        # Detour following
+        self.DETOUR_SETTLE_TIME = 1.0  # s after stopping before a grid counts as fresh
+        self.DETOUR_WP_SPACING = 2.0   # m between waypoints kept from the planned path
+        self.DETOUR_WP_REACHED = 0.7   # m; closer than this counts as reached
+        self.DETOUR_SPEED = 0.3        # m/s cap while detouring
+        self.DETOUR_ALIGNED = np.radians(20)  # facing the waypoint this well + box blocked = path blocked
+
+        # Detour state. detour_map is None when not detouring.
+        self.detour_map = None         # Nx2 waypoints in the map frame
+        self.detour_idx = 0            # index of the waypoint we're driving to
+        self.obstacle_stop_time = None # when we stopped for the current obstacle
+        self.last_planned_stamp = None # grid stamp we last planned on (plan once per grid)
+        self.stop_reason = ""          # shown in the status while stopped for an obstacle
 
         self.previous_twist = Twist()
 
@@ -145,6 +170,8 @@ class PlannerNode(Node):
         self.closest_point_bl_time = self.get_clock().now()
 
     def isPlantingCb(self, msg: Bool):
+        if msg.data and not self.is_planting:
+            self.clearDetour()  # seedling reached; any detour belonged to it
         if self.is_planting and not msg.data:
             self.awaiting_fresh_occ = True
             self.planting_end_time = self.get_clock().now()
@@ -157,6 +184,10 @@ class PlannerNode(Node):
         self.cached_teleop = msg
 
     def currentModeCb(self, msg: Mode):
+        if msg.level != self.current_mode:
+            # e.g. operator took over in teleop: the old detour no longer applies
+            self.clearDetour()
+            self.obstacle_stop_time = None
         self.current_mode = msg.level
 
     # separated gps and local odomertry because ekf is not ready and there's no fully fused global odometry yet
@@ -193,14 +224,16 @@ class PlannerNode(Node):
     def occCb(self, msg: OccupancyGrid):
         self.occ_map = np.asarray(msg.data).reshape(msg.info.height, msg.info.width)
         self.occ_info = msg.info
+        self.occ_stamp = Time.from_msg(msg.header.stamp)
 
         if self.awaiting_fresh_occ and Time.from_msg(msg.header.stamp) > self.planting_end_time:
             self.awaiting_fresh_occ = False
             waited = (self.get_clock().now() - self.planting_end_time).nanoseconds / 1e9
             self.get_logger().info(f"Fresh obstacle data {waited:.1f} s after planting; resuming")
 
-    def isObstacleAhead(self) -> bool:
-        """True if enough occupied cells sit in a box directly ahead of the robot."""
+    def isObstacleAhead(self, max_x=None) -> bool:
+        """True if enough occupied cells sit in a box directly ahead of the robot.
+        max_x shortens the box (used mid-detour to check only up to the next waypoint)."""
         if self.occ_map is None or self.occ_info is None:
             return False
 
@@ -208,16 +241,194 @@ class PlannerNode(Node):
         ox = self.occ_info.origin.position.x
         oy = self.occ_info.origin.position.y
         height, width = self.occ_map.shape
+        box_max_x = self.STOP_BOX_MAX_X if max_x is None else min(max_x, self.STOP_BOX_MAX_X)
 
         # round, not truncate: (0.6 - -10.0) / 0.2 is 52.99999... in floating point,
         # and int() would silently drop the far row of the box.
         col_lo = int(np.clip(round((self.STOP_BOX_MIN_X - ox) / res), 0, width))
-        col_hi = int(np.clip(round((self.STOP_BOX_MAX_X - ox) / res), 0, width))
+        col_hi = int(np.clip(round((box_max_x - ox) / res), 0, width))
         row_lo = int(np.clip(round((-self.STOP_BOX_HALF_WIDTH - oy) / res), 0, height))
         row_hi = int(np.clip(round((self.STOP_BOX_HALF_WIDTH - oy) / res), 0, height))
 
         patch = self.occ_map[row_lo:row_hi, col_lo:col_hi]
         return int(np.count_nonzero(patch >= 50)) >= self.MIN_OBSTACLE_CELLS
+
+    def metersToCell(self, x, y):
+        res = self.occ_info.resolution
+        ox, oy = self.occ_info.origin.position.x, self.occ_info.origin.position.y
+        return int(math.floor((y - oy) / res)), int(math.floor((x - ox) / res))
+
+    def cellToMeters(self, r, c):
+        res = self.occ_info.resolution
+        ox, oy = self.occ_info.origin.position.x, self.occ_info.origin.position.y
+        return ox + (c + 0.5) * res, oy + (r + 0.5) * res   # cell center
+
+    def buildCostArray(self):
+        occ = self.occ_map >= 50
+        if not occ.any():
+            return np.ones(occ.shape)   # needed: the distance calc gives garbage with no obstacles
+        dist_m = distance_transform_edt(~occ) * self.occ_info.resolution   # distance from every cell to nearest obstacle (in meters)
+        cost = 1.0 + self.SOFT_WEIGHT * np.exp(-(dist_m - self.NO_GO_RADIUS) / self.SOFT_FALLOFF)
+        cost[dist_m < self.NO_GO_RADIUS] = np.inf    # inf = impassable for route_through_array
+        return cost
+
+    def planDetour(self, goal_bl):
+        cost = self.buildCostArray()
+        res = self.occ_info.resolution
+        h, w = cost.shape
+
+        # Start: the robot's cell. If it's inside a no-go zone (e.g. a bush beside us),
+        # make the cells around it expensive instead of impassable so the search can leave.
+        start = self.metersToCell(0.0, 0.0)
+        rr, cc = disk(start, self.START_CLEAR_RADIUS / res, shape=cost.shape)
+        patch = cost[rr, cc]
+        patch[np.isinf(patch)] = 20.0
+        cost[rr, cc] = patch
+
+        # Goal: if the seedling is outside the grid, pull it back along the line
+        # from the robot until it's just inside the edge.
+        gx, gy = goal_bl
+        ox, oy = self.occ_info.origin.position.x, self.occ_info.origin.position.y
+        xmin, xmax = ox + res, ox + w * res - res
+        ymin, ymax = oy + res, oy + h * res - res
+        s = 1.0
+        if gx > xmax: s = min(s, xmax / gx)
+        if gx < xmin: s = min(s, xmin / gx)
+        if gy > ymax: s = min(s, ymax / gy)
+        if gy < ymin: s = min(s, ymin / gy)
+        goal = self.metersToCell(gx * s, gy * s)
+
+        # If the goal cell is blocked (seedling next to a rock), use the nearest free cell.
+        if np.isinf(cost[goal]):
+            dist, (ir, ic) = distance_transform_edt(~np.isfinite(cost), return_indices=True)
+            if dist[goal] * res > self.MAX_GOAL_SHIFT:
+                return None
+            goal = (ir[goal], ic[goal])
+
+        try:
+            cells, _ = route_through_array(cost, start, goal, fully_connected=True, geometric=True)
+        except ValueError:          # raised when no path exists
+            return None
+        return np.array([self.cellToMeters(r, c) for r, c in cells])
+
+    def thinPath(self, path_bl):
+        """Keep about one point every DETOUR_WP_SPACING m, plus the final point.
+        Dropping the first cell (the robot itself) on purpose."""
+        step = max(1, int(round(self.DETOUR_WP_SPACING / self.occ_info.resolution)))
+        pts = path_bl[step::step]
+        if len(pts) == 0 or not np.allclose(pts[-1], path_bl[-1]):
+            pts = np.vstack((pts, path_bl[-1:]))
+        return pts
+
+    def getPoseInMap(self):
+        """(x, y, yaw) of base_link in the map frame, or None if TF is missing or old."""
+        try:
+            tf = self.tf_buffer.lookup_transform("map", "base_link", rclpy.time.Time())
+        except TransformException as ex:
+            self.get_logger().warning(f"No map->base_link: {ex}", throttle_duration_sec=2.0)
+            return None
+        age = (self.get_clock().now() - Time.from_msg(tf.header.stamp)).nanoseconds * 1e-9
+        if age > 1.0:
+            self.get_logger().warning(f"map->base_link is {age:.1f} s old", throttle_duration_sec=2.0)
+            return None
+        q = tf.transform.rotation
+        yaw = math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+        return tf.transform.translation.x, tf.transform.translation.y, yaw
+
+    def blToMap(self, pts_bl, pose):
+        """base_link points (Nx2) -> map frame, given the robot pose (x, y, yaw) in map."""
+        x, y, yaw = pose
+        c, s = math.cos(yaw), math.sin(yaw)
+        px, py = pts_bl[:, 0], pts_bl[:, 1]
+        return np.column_stack((x + c * px - s * py, y + s * px + c * py))
+
+    def mapToBl(self, pts_map, pose):
+        """map points (Nx2) -> base_link. Inverse of blToMap."""
+        x, y, yaw = pose
+        c, s = math.cos(yaw), math.sin(yaw)
+        dx, dy = pts_map[:, 0] - x, pts_map[:, 1] - y
+        return np.column_stack((c * dx + s * dy, -s * dx + c * dy))
+
+    def nextDetourWaypoint(self, pose):
+        """The waypoint to drive to, in base_link. Skips waypoints that are reached
+        or already passed. None once the last one is reached."""
+        robot = np.array(pose[:2])
+        while self.detour_idx < len(self.detour_map):
+            wp = self.detour_map[self.detour_idx]
+            nxt = self.detour_idx + 1
+            reached = np.linalg.norm(wp - robot) < self.DETOUR_WP_REACHED
+            # Passed: we're already closer to the next waypoint than this one is.
+            # Stops GPS jitter or a wide turn from sending us back for a missed point.
+            passed = nxt < len(self.detour_map) and (
+                np.linalg.norm(self.detour_map[nxt] - robot) < np.linalg.norm(self.detour_map[nxt] - wp)
+            )
+            if not (reached or passed):
+                return self.mapToBl(wp[None, :], pose)[0]
+            self.detour_idx += 1
+        return None
+
+    def stopAndPlanDetour(self):
+        """Obstacle ahead and no detour yet: stop, wait for a fresh grid, plan once per grid."""
+        self.twist_pub.publish(self.getSmoothed(Twist()))
+        self.point_turn_direction = 0
+
+        now = self.get_clock().now()
+        if self.obstacle_stop_time is None:
+            self.obstacle_stop_time = now
+            self.stop_reason = "obstacle ahead, waiting for fresh scan"
+        waited = (now - self.obstacle_stop_time).nanoseconds * 1e-9
+        status = f"Stopped ({waited:.0f} s): {self.stop_reason}"
+
+        # Only plan on a grid built after we'd stopped, and only once per grid.
+        settled = self.obstacle_stop_time + Duration(seconds=self.DETOUR_SETTLE_TIME)
+        already_tried = self.last_planned_stamp is not None and self.occ_stamp == self.last_planned_stamp
+        if self.occ_stamp is None or self.occ_stamp < settled or already_tried:
+            self.publishStatus(status, DiagnosticStatus.WARN)
+            return
+        self.last_planned_stamp = self.occ_stamp
+
+        path_bl = None
+        pose = self.getPoseInMap() if self.heading_valid else None
+        if not self.heading_valid:
+            self.stop_reason = "obstacle ahead, heading unknown"
+        elif pose is None:
+            self.stop_reason = "obstacle ahead, robot pose unavailable"
+        else:
+            path_bl = self.planDetour(self.closest_point_bl)
+            if path_bl is None or len(path_bl) < 3:
+                # No way around (or can't get any closer). Stay stopped; retry on the next grid.
+                self.stop_reason = "no way around obstacle, retrying on each new scan"
+                path_bl = None
+        if path_bl is None:
+            self.publishStatus(f"Stopped ({waited:.0f} s): {self.stop_reason}", DiagnosticStatus.WARN)
+            return
+
+        self.detour_map = self.blToMap(self.thinPath(path_bl), pose)
+        self.detour_idx = 0
+        self.obstacle_stop_time = None
+        self.publishDetourPath()
+        self.get_logger().info(
+            f"Detour planned: {len(self.detour_map)} waypoints, {waited:.1f} s after stopping")
+
+    def clearDetour(self):
+        if self.detour_map is not None:
+            self.detour_map = None
+            self.publishDetourPath()  # empty path clears it in Foxglove
+        self.point_turn_direction = 0
+
+    def publishDetourPath(self):
+        msg = Path()
+        msg.header.frame_id = "map"
+        msg.header.stamp = self.get_clock().now().to_msg()
+        if self.detour_map is not None:
+            for x, y in self.detour_map:
+                pose_msg = PoseStamped()
+                pose_msg.header = msg.header
+                pose_msg.pose.position.x = float(x)
+                pose_msg.pose.position.y = float(y)
+                msg.poses.append(pose_msg)
+        self.detour_path_pub.publish(msg)
+
 
     def generateCandidates(self, top_speed=1.5, time_horizon=5.0, dt=0.5):
 
@@ -662,11 +873,6 @@ class PlannerNode(Node):
             self.publishStatus("Waiting for fresh obstacle data after planting", DiagnosticStatus.WARN)
             return
 
-        if self.isObstacleAhead():
-            self.twist_pub.publish(self.getSmoothed(Twist()))
-            self.publishStatus("Stopped: obstacle ahead", DiagnosticStatus.WARN)
-            return
-
         # The bearing comes from cost_map_node via TF. If it stops arriving, stop
         # rather than keep turning on an old value.
         bearing_age = (self.get_clock().now() - self.closest_point_bl_time).nanoseconds * 1e-9
@@ -676,7 +882,44 @@ class PlannerNode(Node):
             self.twist_pub.publish(self.getSmoothed(Twist()))
             return
 
-        goal_point = self.closest_point_bl
+        # Obstacle handling: stop, plan a detour once, then follow its waypoints
+        # with the same steering code below. The goal is either the seedling or
+        # the current detour waypoint.
+        if self.detour_map is not None and not self.heading_valid:
+            self.clearDetour()  # a map-frame path can't be followed without heading
+
+        if self.detour_map is None:
+            blocked = self.isObstacleAhead()
+            if blocked:
+                self.stopAndPlanDetour()
+                return
+            self.obstacle_stop_time = None
+            goal_point = self.closest_point_bl
+            target = "seedling"
+        else:
+            pose = self.getPoseInMap()
+            if pose is None:
+                self.publishStatus("Detour: robot pose unavailable. Holding.", DiagnosticStatus.WARN)
+                self.twist_pub.publish(self.getSmoothed(Twist()))
+                return
+            goal_point = self.nextDetourWaypoint(pose)
+            if goal_point is None:
+                self.get_logger().info("Detour complete; heading to seedling")
+                self.clearDetour()
+                self.twist_pub.publish(self.getSmoothed(Twist()))
+                return
+            # Only check the stretch we're about to drive: up to the waypoint. The full
+            # 3 m box would see the obstacle we're going around and stop the detour.
+            blocked = self.isObstacleAhead(max_x=np.linalg.norm(goal_point))
+            if blocked and abs(self.getYawError(goal_point)) < self.DETOUR_ALIGNED:
+                # Facing along the path and the stop box is still blocked: something
+                # new is on the path. Drop it; next tick stops and plans from here.
+                self.get_logger().info("Detour path blocked; replanning")
+                self.clearDetour()
+                self.twist_pub.publish(self.getSmoothed(Twist()))
+                return
+            target = f"detour waypoint {self.detour_idx + 1}/{len(self.detour_map)}"
+
         distance_remaining = np.linalg.norm(goal_point)
         yaw_error = self.getYawError(goal_point)
 
@@ -707,7 +950,10 @@ class PlannerNode(Node):
         POINT_TURN_STOP = np.radians(20)
         KEEP_DIRECTION_ABOVE = np.radians(135)
         NEAR_GOAL = 2.0  # m
-        start_threshold = POINT_TURN_START if distance_remaining > NEAR_GOAL else np.pi / 2
+        # The near-goal exception is for SBAS noise around the seedling; detour
+        # waypoints are always ~2 m away, so they use the normal threshold.
+        far_or_detour = distance_remaining > NEAR_GOAL or self.detour_map is not None
+        start_threshold = POINT_TURN_START if far_or_detour else np.pi / 2
 
         if self.point_turn_direction == 0 and abs(yaw_error) > start_threshold:
             self.point_turn_direction = 1 if yaw_error > 0 else -1
@@ -719,29 +965,35 @@ class PlannerNode(Node):
 
         if self.point_turn_direction != 0:
             direction_string = "left" if self.point_turn_direction > 0 else "right"
-            self.publishStatus(f"Turning {direction_string} toward seedling")
+            self.publishStatus(f"Turning {direction_string} toward {target}")
             # Slow down as the error shrinks so lag in the heading/bearing can't
             # carry us through the stop window.
             omega = float(np.clip(abs(yaw_error), 0.4, 0.8))
-            self.pointTurnFromYawError(self.point_turn_direction, omega=omega, linear=0.2)
+            # No forward creep while something is in the stop box (only possible mid-detour).
+            self.pointTurnFromYawError(self.point_turn_direction, omega=omega,
+                                       linear=0.0 if blocked else 0.2)
             return
 
         Kp_angular = 1.0
         MAX_DRIVE_ANGULAR = 0.5  # rad/s
         target_angular = float(np.clip(yaw_error * Kp_angular, -MAX_DRIVE_ANGULAR, MAX_DRIVE_ANGULAR))
 
-        SPEED_LIMIT = 0.6  # m/s
+        SPEED_LIMIT = self.DETOUR_SPEED if self.detour_map is not None else 0.6  # m/s
         # 0.375 = 0.25 * 1.5, what the old velocity-feedback term amounted to
         # (it read ego_linear_vel, which nothing ever updated from 0).
         Kp_linear = 0.375
         target_speed = min(distance_remaining * Kp_linear, SPEED_LIMIT)
+        if blocked:
+            # Only reachable mid-detour: keep steering toward the waypoint but
+            # don't drive into whatever is in the stop box.
+            target_speed = 0.0
 
         cmd_msg = Twist()
         cmd_msg.linear.x = target_speed
         cmd_msg.angular.z = target_angular
         self.twist_pub.publish(self.getSmoothed(cmd_msg))
         self.publishStatus(
-            f"Driving {target_speed:.2} m/s, {distance_remaining:.2}m away"
+            f"Driving {target_speed:.2} m/s toward {target}, {distance_remaining:.2}m away"
         )
 
     def publishAssistedTwist(self):

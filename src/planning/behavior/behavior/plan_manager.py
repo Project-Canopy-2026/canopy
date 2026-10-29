@@ -130,6 +130,11 @@ class PlanManager(Node):
             self.get_logger().warning("seedling_reached_distance =Could not identify closest remaining seedling.")
             return
 
+        # cost_map_node's distance can be stale (measured to a seedling we just
+        # removed). Confirm with our own distance before deleting anything.
+        if nearest_distance > self.seedling_reached_distance:
+            return
+
         del self.remaining_seedling_points[closest_seedling_idx]
         del self.remaining_seedlings[closest_seedling_idx]
 
