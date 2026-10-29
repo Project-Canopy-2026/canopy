@@ -1,0 +1,40 @@
+# W200 <-> Jetson bridge (domain_bridge), started by gnss_bringup.launch.py.
+#
+# The W200 runs in ROS domain 0. The Jetson stack runs in domain 1 with a
+# local-only DDS profile (config/dds/fastdds_canopy.xml), so the W200 sees one
+# Jetson process (this bridge) instead of every node. Only the topics below
+# cross between the two. To use another W200 topic on the Jetson, add it here.
+#
+# QoS: unless set below, the bridge copies the QoS of the publisher it finds.
+name: w200_bridge
+from_domain: 0   # W200 (Clearpath)
+to_domain: 1     # Jetson stack (ROS_DOMAIN_ID, set in ~/.bashrc)
+
+topics:
+  # W200 -> Jetson. The W200's TF goes straight onto /tf and /tf_static
+  # (this replaces the tf_relay node).
+  /w200_0120/tf:
+    type: tf2_msgs/msg/TFMessage
+    remap: /tf
+    qos:
+      reliability: reliable
+      durability: volatile
+      depth: 100
+  /w200_0120/tf_static:
+    type: tf2_msgs/msg/TFMessage
+    remap: /tf_static
+    qos:
+      # Latched, so nodes started later still get the static transforms.
+      # Depth 100 keeps the latest message from every static publisher.
+      reliability: reliable
+      durability: transient_local
+      depth: 100
+  /w200_0120/sensors/imu_0/data:      # gnss_interface (heading)
+    type: sensor_msgs/msg/Imu
+  /w200_0120/platform/emergency_stop: # trajectory_planner
+    type: std_msgs/msg/Bool
+
+  # Jetson -> W200
+  /w200_0120/cmd_vel:                 # trajectory_planner drive commands
+    type: geometry_msgs/msg/Twist
+    reversed: true

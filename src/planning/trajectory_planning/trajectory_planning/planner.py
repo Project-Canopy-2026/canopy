@@ -2,6 +2,7 @@ import numpy as np
 import rclpy
 from rclpy.node import Node, ParameterDescriptor, ParameterType
 from rclpy.time import Time
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from scipy.spatial.distance import pdist
 from matplotlib import pyplot as plt
 from tf2_ros.buffer import Buffer
@@ -59,8 +60,18 @@ class PlannerNode(Node):
         #self.create_subscription(Odometry, "/odometry/filtered", self.localodomCb, 1)
         self.create_subscription(Float32, "/gnss/yaw", self.egoYawCb, 1)
         self.create_subscription(Bool, "/gnss/heading_valid", self.headingValidCb, 1)
+        # The W200 publishes its e-stop state best effort (10-26 bag), and a
+        # reliable subscription (the default) never matches a best-effort
+        # publisher, so the planner never saw the e-stop. Best effort matches
+        # both, so this keeps working if the publisher changes.
+        estop_qos = QoSProfile(
+            depth=1,
+            history=HistoryPolicy.KEEP_LAST,
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+        )
         self.create_subscription(
-            Bool, "/w200_0120/platform/emergency_stop", self.estopCb, 1
+            Bool, "/w200_0120/platform/emergency_stop", self.estopCb, estop_qos
         )
         self.create_subscription(Mode, "/planning/current_mode", self.currentModeCb, 1)
         self.create_subscription(Bool, "/behavior/is_planting", self.isPlantingCb, 1)
