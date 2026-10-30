@@ -37,6 +37,19 @@ _FSR_MONITORED_STATES = (State.DRILLING_DOWN, State.DRILLING_DWELL)
 _LINAK_OUTCOMES = ('DONE', 'STALL', 'STOPPED')
 
 
+# The type this node needs each parameter as. 
+_PARAM_TYPES = {
+    'drilling_distance_cm': float,
+    'drilling_dwell':       float,
+    'tamping_distance_cm':  float,
+    'shift_distance_cm':    float,
+    'auger_rpm':            int,
+    'fsr_abort_voltage':    float,
+    'fsr_poll_hz':          float,
+    'fsr_abort_seconds':    float,
+}
+
+
 def _parse_linak_status(token: str):
     """'DONE:LINAK1,15.32' → ('DONE', 1, 15.32). Returns (None, None, None) if it isn't one."""
     head, _, travelled_str = token.partition(',')
@@ -73,8 +86,7 @@ class PlantingFsmNode(Node):
       /linak_cmd       (std_msgs/String) — commands to LINAK actuators
       planting_state   (std_msgs/String) — current FSM state name
 
-    Parameters (values: the INDOOR / OUTDOOR PARAMS block in __init__ — the
-    only place they are set; planting_bringup.launch.py does not pass them):
+    Parameters:
       drilling_distance_cm  float  LINAK_1 drill depth from home (cm)
       drilling_dwell        float  dwell in soil (s)
       tamping_distance_cm   float  LINAK_2 tamp depth from home (cm), pressed twice;
@@ -84,26 +96,6 @@ class PlantingFsmNode(Node):
       fsr_abort_voltage     float  abort the drill above this FSR voltage
       fsr_poll_hz           float  how often to poll the FSR while drilling
       fsr_abort_seconds     float  sustained time over threshold before aborting
-
-    Obstacle abort:
-      While DRILLING_DOWN or DRILLING_DWELL the node polls the Arduino with
-      'fsr,read' and watches the FSR:<v>,<ohms> replies. fsr_abort_seconds of
-      sustained voltage at or above fsr_abort_voltage means the auger has met a
-      rock or hard surface: the FSM enters DIGGING_OBSTACLE, stops LINAK_1,
-      sends it HOME (auger still spinning so it does not jam), stops the auger
-      once clear, and returns to IDLE *without* shifting to the tamper — nothing
-      is planted at an obstructed site. A STALL:LINAK1 during DRILLING_DOWN
-      takes the same path, covering obstacles the actuator gives up on before
-      the FSR registers them. The threshold is UNCALIBRATED: the 12 initial
-      field trials peaked at 3.559 V on workable soil, but no rock/wood strike
-      has been logged yet.
-
-      LINAK moves are ABSOLUTE positions in cm from home: 'GOTO,<depth>' for the
-      two downward moves, 'HOME' for every retract. The driver clamps each
-      target to the stroke, so a command deeper than the actuator can go gives a
-      shallower hole rather than a stall against the end stop that would be
-      reported as an obstacle. Per-move speed: drilling down SLOW (1.09 cm/s,
-      0x64); auger retract and tamper FAST (2.18 cm/s, 0xCD).
     """
 
     def __init__(self):
@@ -112,6 +104,9 @@ class PlantingFsmNode(Node):
         # ── OUTDOOR PARAMS ────────────────────────────────────────────────────
         # Distances are absolute depths from home (0 cm = fully retracted).
         # Retracts take no parameter: they go HOME.
+        # Write every distance and time as a FLOAT — 23.0, not 23. A bare int
+        # declares an integer parameter; _cast_params() below casts it back and
+        # warns, but only a value it cannot cast at all stops the node.
         # auger 30 cm, tamping 12 cm (110/26 field test downhill)
         # max FSR seens around 3.3 V
         self.declare_parameter('drilling_distance_cm', 30.0)        
@@ -119,24 +114,21 @@ class PlantingFsmNode(Node):
         self.declare_parameter('tamping_distance_cm',  12.0)
         self.declare_parameter('shift_distance_cm',    23.0) # measured
         self.declare_parameter('auger_rpm',            75)
-
-        # FSR obstacle abort. UNCALIBRATED — no rock/wood strike has been logged yet.
-        # The 12 initial field trials peaked at 3.559 V on workable soil, so 3.7 V
-        # clears every recorded drill; the 3-sample debounce covers the rest of the
-        # margin. Retune once a deliberate obstacle test exists.
         self.declare_parameter('fsr_abort_voltage',    3.5)
         self.declare_parameter('fsr_poll_hz',          10.0)
         self.declare_parameter('fsr_abort_seconds',    1.0)
 
         # ── INDOOR PARAMS ────────────────────────────────────────────────────
-        # self.declare_parameter('drilling_distance_cm', 5.0)
-        # self.declare_parameter('drilling_dwell',       2.0)
+        # self.declare_parameter('drilling_distance_cm', 5.0)        
+        # self.declare_parameter('drilling_dwell',       6.0)
         # self.declare_parameter('tamping_distance_cm',  5.0)
         # self.declare_parameter('shift_distance_cm',    23.0) # measured
         # self.declare_parameter('auger_rpm',            75)
-        # self.declare_parameter('fsr_abort_voltage',    2.5)
+        # self.declare_parameter('fsr_abort_voltage',    3.5)
         # self.declare_parameter('fsr_poll_hz',          10.0)
         # self.declare_parameter('fsr_abort_seconds',    1.0)
+
+        self._cast_params()         # mistyped defaults get cast, with a warning
 
         # ── Publishers ────────────────────────────────────────────────────
         self._arduino_pub    = self.create_publisher(String, '/arduino_cmd',        10)
@@ -161,6 +153,56 @@ class PlantingFsmNode(Node):
         self._fsr_over    = 0       # consecutive samples over threshold
 
         self.get_logger().info('planting_fsm ready — waiting for do_planting.')
+
+    # ── Parameters ────────────────────────────────────────────────────────
+
+    def _cast_params(self):
+        """
+        Read every parameter once, cast to the type this node needs, into
+        self._params.
+
+        Casting rather than reading .double_value / .integer_value directly is
+        what makes a mistyped default harmless: float(23) is 23.0, where the
+        same parameter read as a double would have been 0.0. The cast is logged
+        so the typo is still visible in the launch output.
+
+        Resolved here, before any publisher exists, so the values the sequence
+        runs on are fixed for the run — `ros2 param set` afterwards does
+        nothing, which is also what the INDOOR / OUTDOOR block above assumes.
+        """
+        self._params = {}
+        unusable = []
+
+        for name, want in _PARAM_TYPES.items():
+            value = self.get_parameter(name).value
+            if type(value) is want:
+                self._params[name] = value
+                continue
+            try:
+                self._params[name] = want(value)
+            except (TypeError, ValueError):
+                unusable.append(
+                    f'  {name} = {value!r} ({type(value).__name__}) '
+                    f'is not a {want.__name__}'
+                )
+                continue
+            self.get_logger().warn(
+                f'{name} was declared as {type(value).__name__} {value!r} — '
+                f'cast to {want.__name__} {self._params[name]!r}. '
+                f'Fix the literal in planting_fsm.py.'
+            )
+
+        if unusable:
+            # Nothing sensible to cast, and every one of these reaches hardware
+            # as a distance, a speed or a timer period. Nothing has been
+            # commanded yet, so stopping here stops the field test rather than
+            # a motor.
+            self.get_logger().error(
+                'Unusable planting parameters — not starting:\n'
+                + '\n'.join(unusable)
+                + '\nFix the INDOOR / OUTDOOR PARAMS block in planting_fsm.py.'
+            )
+            raise RuntimeError(f'{len(unusable)} unusable planting parameter(s)')
 
     # ── Topic callbacks ───────────────────────────────────────────────────
 
@@ -304,7 +346,7 @@ class PlantingFsmNode(Node):
     # ── FSR obstacle detection ────────────────────────────────────────────
 
     def _start_fsr_poll(self):
-        hz = self.get_parameter('fsr_poll_hz').get_parameter_value().double_value
+        hz = self._params['fsr_poll_hz']
         with self._lock:
             self._fsr_over = 0
             if self._fsr_timer is not None:
@@ -330,10 +372,9 @@ class PlantingFsmNode(Node):
             self.get_logger().warn(f'Malformed FSR reply: {token}')
             return
 
-        p = self.get_parameter
-        threshold = p('fsr_abort_voltage').get_parameter_value().double_value
-        seconds   = p('fsr_abort_seconds').get_parameter_value().double_value
-        hz        = p('fsr_poll_hz').get_parameter_value().double_value
+        threshold = self._params['fsr_abort_voltage']
+        seconds   = self._params['fsr_abort_seconds']
+        hz        = self._params['fsr_poll_hz']
 
         # Count samples rather than wall-clock: if replies are dropped we
         # under-count and simply take longer to trip, which is the safe
@@ -367,8 +408,7 @@ class PlantingFsmNode(Node):
         # target count from TPDO feedback and stops there. The FAST/SLOW tag
         # only controls hardware travel speed (0xCD vs 0x64 RPDO speed byte).
 
-        p         = self.get_parameter
-        auger_rpm = p('auger_rpm').get_parameter_value().integer_value
+        auger_rpm = self._params['auger_rpm']
 
         if state == State.LINAK_HOME:
             self._linak('LINAK,1,HOME')
@@ -387,12 +427,12 @@ class PlantingFsmNode(Node):
             # absolute depth from home, so a homing that finished short makes
             # the hole shallower — it cannot aim past the end stop and stall
             # there, which the driver would have reported as a rock.
-            depth = p('drilling_distance_cm').get_parameter_value().double_value
+            depth = self._params['drilling_distance_cm']
             self._linak(f'LINAK,1,GOTO,{depth:.2f},SLOW')
             # advances on DONE:LINAK1
 
         elif state == State.DRILLING_DWELL:
-            dwell = p('drilling_dwell').get_parameter_value().double_value
+            dwell = self._params['drilling_dwell']
             self.get_logger().info(f'Dwelling in soil for {dwell} s...')
             with self._lock:
                 self._dwell_timer = self.create_timer(dwell, self._dwell_done)
@@ -405,7 +445,7 @@ class PlantingFsmNode(Node):
 
         elif state == State.SHIFT_TO_CHUTE:
             self._arduino('bldc,stop')
-            shift_mm = p('shift_distance_cm').get_parameter_value().double_value * 10.0
+            shift_mm = self._params['shift_distance_cm'] * 10.0
             self._arduino(f'stepper,left,{shift_mm:.1f}')
             # advances on DONE:STEPPER → publishes /chute_in_position True → WAIT_SEEDLING
 
@@ -413,14 +453,14 @@ class PlantingFsmNode(Node):
             self.get_logger().info('Waiting for seedling_dropped...')
 
         elif state in (State.TAMPING_DOWN_1, State.TAMPING_DOWN_2):
-            depth = p('tamping_distance_cm').get_parameter_value().double_value
+            depth = self._params['tamping_distance_cm']
             self._linak(f'LINAK,2,GOTO,{depth:.2f},FAST')
             # advances on DONE:LINAK2 — or STALL, the tamper hitting soil
 
         elif state == State.TAMPING_LIFT:
             # Relative, so it lifts from wherever the press stopped on the soil.
             # Half the depth, so it can never lift past home.
-            lift = p('tamping_distance_cm').get_parameter_value().double_value
+            lift = self._params['tamping_distance_cm']
             self._linak(f'LINAK,2,UP,{lift:.2f},FAST')
             # advances on DONE:LINAK2
 
@@ -429,7 +469,7 @@ class PlantingFsmNode(Node):
             # advances on DONE:LINAK2
 
         elif state == State.SHIFT_TO_AUGER:
-            shift_mm = p('shift_distance_cm').get_parameter_value().double_value * 10.0
+            shift_mm = self._params['shift_distance_cm'] * 10.0
             self._arduino(f'stepper,right,{shift_mm:.1f}')
             # advances on DONE:STEPPER
 
@@ -485,7 +525,15 @@ class PlantingFsmNode(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    node = PlantingFsmNode()
+    try:
+        node = PlantingFsmNode()
+    except RuntimeError as exc:
+        # Unusable parameters. _cast_params() has already logged which ones;
+        # a traceback on top of that only buries it.
+        print(f'planting_fsm: {exc}')
+        if rclpy.ok():
+            rclpy.shutdown()
+        return 1
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

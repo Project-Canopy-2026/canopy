@@ -128,15 +128,25 @@ void bldc_stop()
 // Starts a non-blocking step-counted stepper move (speed locked at STEPPER_RPM).
 //   direction "left"  → CCW (LOW on DIR)
 //   direction "right" → CW  (HIGH on DIR)
-void stepper_move(String direction, float mm)
+// Returns false, having moved nothing, if <mm> does not come to at least one
+// step. That check is not cosmetic: the ISR only stops the clock on the
+// stepsRemaining 1→0 transition, so a move started with stepsRemaining <= 0
+// pulses the stepper FOREVER and never sends DONE:STEPPER. "stepper,left,0" is
+// enough to cause it, and so is any unparseable <mm> — String::toFloat()
+// returns 0.0 rather than failing.
+bool stepper_move(String direction, float mm)
 {
+    long steps = (long)(mm * STEPS_PER_MM + 0.5f);
+    if (steps <= 0) return false;
+
     stopTimer();
     digitalWrite(DIR, (direction == "right") ? HIGH : LOW);
     delayMicroseconds(5); // DIR setup time (datasheet: min 5 µs before PUL)
 
-    stepsRemaining = (long)(mm * STEPS_PER_MM + 0.5f);
+    stepsRemaining = steps;
     stepperDone    = false;
     startTimer();
+    return true;
 }
 
 void stepper_stop()
@@ -236,8 +246,16 @@ void handle_command(String cmd)
         if ((action == "left" || action == "right") && count >= 3)
         {
             float mm = tokens[2].toFloat();
-            stepper_move(action, mm);
-            send_ack("stepper," + action);
+            if (stepper_move(action, mm))
+            {
+                send_ack("stepper," + action);
+            }
+            else
+            {
+                // Rejected before anything moved. ERR sends the FSM to FAULT,
+                // which is the right end for a command that cannot complete.
+                send_error("BAD_STEPPER_MM:" + tokens[2]);
+            }
         }
         else if (action == "stop")
         {
