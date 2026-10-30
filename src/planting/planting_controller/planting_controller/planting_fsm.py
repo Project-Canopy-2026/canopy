@@ -111,8 +111,8 @@ class PlantingFsmNode(Node):
         # max FSR seens around 3.3 V
         self.declare_parameter('drilling_distance_cm', 30.0)        
         self.declare_parameter('drilling_dwell',       6.0)
-        self.declare_parameter('tamping_distance_cm',  12.0)
-        self.declare_parameter('shift_distance_cm',    23.0) # measured
+        self.declare_parameter('tamping_distance_cm',  17.0)
+        self.declare_parameter('shift_distance_cm',    23.0) # don't change
         self.declare_parameter('auger_rpm',            75)
         self.declare_parameter('fsr_abort_voltage',    3.5)
         self.declare_parameter('fsr_poll_hz',          10.0)
