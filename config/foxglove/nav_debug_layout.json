@@ -46,7 +46,6 @@
         "/cost/occupancy": { "visible": false, "colorMode": "map", "alpha": 0.5 },
         "/cost/dist_to_seedlings": { "visible": false, "colorMode": "costmap", "alpha": 0.6 },
         "/nonground": { "visible": true, "colorMode": "flat", "flatColor": "#ff3232", "pointSize": 3 },
-        "/ground": { "visible": false, "colorMode": "flat", "flatColor": "#787878", "pointSize": 2 },
         "/vis/candidates": { "visible": true },
         "/cmd_vel/path": { "visible": true, "lineWidth": 0.12, "gradient": ["#00ffff", "#00ffff"] },
         "/vis/seedlings": { "visible": true },
