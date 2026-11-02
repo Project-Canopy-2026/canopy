@@ -882,6 +882,14 @@ class PlannerNode(Node):
             self.twist_pub.publish(self.getSmoothed(Twist()))
             return
 
+        # Hold existing grid if lidar data is old
+        occ_age = None if self.occ_stamp is None else (self.get_clock().now() - self.occ_stamp).nanoseconds * 1e-9
+        if occ_age is None or occ_age > 1.5:
+            self.publishStatus("Obstacle data missing" if occ_age is None else
+                            f"Obstacle data {occ_age:.1f} s old. Holding.", DiagnosticStatus.WARN)
+            self.twist_pub.publish(self.getSmoothed(Twist()))
+            return
+
         # Obstacle handling: stop, plan a detour once, then follow its waypoints
         # with the same steering code below. The goal is either the seedling or
         # the current detour waypoint.
