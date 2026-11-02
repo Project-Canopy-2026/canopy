@@ -31,8 +31,8 @@ topics:
       depth: 100
   /w200_0120/sensors/imu_0/data:      # gnss_interface (heading)
     type: sensor_msgs/msg/Imu
-  /w200_0120/platform/emergency_stop: # trajectory_planner
-    type: std_msgs/msg/Bool
+  # /w200_0120/platform/emergency_stop: # trajectory_planner
+  #   type: std_msgs/msg/Bool
 
   # Jetson -> W200
   /w200_0120/cmd_vel:                 # trajectory_planner drive commands

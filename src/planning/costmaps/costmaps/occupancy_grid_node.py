@@ -135,7 +135,7 @@ class OccupancyGridNode(Node):
 
         self.occ_grid_pub = self.create_publisher(OccupancyGrid, "/cost/occupancy", 1)
          # Publish a free (all-zero) grid at 10 Hz when no Velodyne data is available
-        self.create_timer(0.1, self.publishFreeGridIfStale)
+        #self.create_timer(0.1, self.publishFreeGridIfStale)
 
         # While planting, the lidar nodes are stopped (behavior/obstacle_pipeline_manager)
         # and this node pauses instead of restarting, which is slow in Python.
