@@ -152,10 +152,23 @@ class PlannerNode(Node):
         self.DETOUR_WP_REACHED = 0.7   # m; closer than this counts as reached
         self.DETOUR_SPEED = 0.3        # m/s cap while detouring
         self.DETOUR_ALIGNED = np.radians(20)  # facing the waypoint this well + box blocked = path blocked
+        # Steer at a point this far ahead along the path. The Warthog starts turning
+        # ~1.5 s after a command (11-3 bag), ~0.45 m at detour speed; this is ~3x that.
+        self.DETOUR_LOOKAHEAD = 1.5    # m
+
+        # Detour exit: leave the detour once the straight line to the seedling is clear,
+        # instead of following the path out to the grid edge.
+        self.DETOUR_EXIT_CLEARANCE = self.STOP_BOX_HALF_WIDTH + 0.3  # m; keeps the stop box clear after exiting
+        self.DETOUR_EXIT_LOOKAHEAD = 6.0  # m of the line to the seedling that must be clear
+        self.DETOUR_EXIT_TICKS = 5        # consecutive clear ticks (0.5 s) before exiting
 
         # Detour state. detour_map is None when not detouring.
-        self.detour_map = None         # Nx2 waypoints in the map frame
-        self.detour_idx = 0            # index of the waypoint we're driving to
+        self.detour_map = None         # Nx2 path points in the map frame
+        self.detour_idx = 0            # index of the closest path point (progress along the path)
+        self.detour_clear_ticks = 0    # consecutive ticks the exit check passed
+        # The grid only shows obstacles in front of the robot, so the obstacles we
+        # planned around are remembered (map frame) to tell when they're behind us.
+        self.detour_obstacles_map = np.zeros((0, 2))
         self.obstacle_stop_time = None # when we stopped for the current obstacle
         self.last_planned_stamp = None # grid stamp we last planned on (plan once per grid)
         self.stop_reason = ""          # shown in the status while stopped for an obstacle
@@ -350,22 +363,43 @@ class PlannerNode(Node):
         return np.column_stack((c * dx + s * dy, -s * dx + c * dy))
 
     def nextDetourWaypoint(self, pose):
-        """The waypoint to drive to, in base_link. Skips waypoints that are reached
-        or already passed. None once the last one is reached."""
+        """The point to steer at, in base_link: DETOUR_LOOKAHEAD m along the path past
+        the closest path point. None once the end of the path is reached.
+        A target that slides along the path doesn't jump at handoffs, and its bearing
+        doesn't swing wildly the way a waypoint's does as the robot gets close to it."""
         robot = np.array(pose[:2])
-        while self.detour_idx < len(self.detour_map):
-            wp = self.detour_map[self.detour_idx]
-            nxt = self.detour_idx + 1
-            reached = np.linalg.norm(wp - robot) < self.DETOUR_WP_REACHED
-            # Passed: we're already closer to the next waypoint than this one is.
-            # Stops GPS jitter or a wide turn from sending us back for a missed point.
-            passed = nxt < len(self.detour_map) and (
-                np.linalg.norm(self.detour_map[nxt] - robot) < np.linalg.norm(self.detour_map[nxt] - wp)
-            )
-            if not (reached or passed):
-                return self.mapToBl(wp[None, :], pose)[0]
-            self.detour_idx += 1
-        return None
+        path = self.detour_map
+        if np.linalg.norm(path[-1] - robot) < self.DETOUR_WP_REACHED:
+            return None
+        # Closest point, searched only ~4 m ahead so progress never goes backward.
+        window = path[self.detour_idx:self.detour_idx + 20]
+        self.detour_idx += int(np.argmin(np.linalg.norm(window - robot, axis=1)))
+        along = np.concatenate(
+            ([0.0], np.cumsum(np.linalg.norm(np.diff(path[self.detour_idx:], axis=0), axis=1))))
+        j = min(self.detour_idx + int(np.searchsorted(along, self.DETOUR_LOOKAHEAD)), len(path) - 1)
+        return self.mapToBl(path[j][None, :], pose)[0]
+
+    def occupiedCellsBl(self):
+        """Centers of occupied grid cells (Nx2), in base_link."""
+        rows, cols = np.nonzero(self.occ_map >= 50)
+        res = self.occ_info.resolution
+        ox, oy = self.occ_info.origin.position.x, self.occ_info.origin.position.y
+        return np.column_stack((ox + (cols + 0.5) * res, oy + (rows + 0.5) * res))
+
+    def seedlingLineClear(self, pose):
+        """True if the first DETOUR_EXIT_LOOKAHEAD m of the straight line to the seedling
+        stays DETOUR_EXIT_CLEARANCE from every obstacle, remembered or currently seen."""
+        gx, gy = self.closest_point_bl
+        d = math.hypot(gx, gy)
+        if d < 1e-3:
+            return True
+        ab = np.array([gx, gy]) / d * min(d, self.DETOUR_EXIT_LOOKAHEAD)
+        obs = np.vstack((self.mapToBl(self.detour_obstacles_map, pose), self.occupiedCellsBl()))
+        if len(obs) == 0:
+            return True
+        # Distance from each obstacle point to the segment from the robot to ab.
+        t = np.clip(obs @ ab / (ab @ ab), 0.0, 1.0)
+        return float(np.linalg.norm(obs - t[:, None] * ab, axis=1).min()) >= self.DETOUR_EXIT_CLEARANCE
 
     def stopAndPlanDetour(self):
         """Obstacle ahead and no detour yet: stop, wait for a fresh grid, plan once per grid."""
@@ -403,8 +437,14 @@ class PlannerNode(Node):
             self.publishStatus(f"Stopped ({waited:.0f} s): {self.stop_reason}", DiagnosticStatus.WARN)
             return
 
-        self.detour_map = self.blToMap(self.thinPath(path_bl), pose)
+        # Keep the full path (first cell is the robot itself); nextDetourWaypoint
+        # steers at a point sliding along it.
+        self.detour_map = self.blToMap(path_bl[1:], pose)
         self.detour_idx = 0
+        self.detour_clear_ticks = 0
+        occ_bl = self.occupiedCellsBl()
+        self.detour_obstacles_map = self.blToMap(
+            occ_bl[np.hypot(occ_bl[:, 0], occ_bl[:, 1]) < 8.0], pose)
         self.obstacle_stop_time = None
         self.publishDetourPath()
         self.get_logger().info(
@@ -415,6 +455,7 @@ class PlannerNode(Node):
             self.detour_map = None
             self.publishDetourPath()  # empty path clears it in Foxglove
         self.point_turn_direction = 0
+        self.detour_clear_ticks = 0
 
     def publishDetourPath(self):
         msg = Path()
@@ -896,6 +937,16 @@ class PlannerNode(Node):
         if self.detour_map is not None and not self.heading_valid:
             self.clearDetour()  # a map-frame path can't be followed without heading
 
+        # Leave the detour as soon as the obstacle is passed: stop box clear and the
+        # straight line to the seedling clear of everything we know of, for 0.5 s.
+        if self.detour_map is not None:
+            pose = self.getPoseInMap()
+            clear = pose is not None and not self.isObstacleAhead() and self.seedlingLineClear(pose)
+            self.detour_clear_ticks = self.detour_clear_ticks + 1 if clear else 0
+            if self.detour_clear_ticks >= self.DETOUR_EXIT_TICKS:
+                self.get_logger().info("Obstacle passed, line to seedling clear; ending detour")
+                self.clearDetour()  # falls through to normal seedling steering below
+
         if self.detour_map is None:
             blocked = self.isObstacleAhead()
             if blocked:
@@ -916,9 +967,9 @@ class PlannerNode(Node):
                 self.clearDetour()
                 self.twist_pub.publish(self.getSmoothed(Twist()))
                 return
-            # Only check the stretch we're about to drive: up to the waypoint. The full
-            # 3 m box would see the obstacle we're going around and stop the detour.
-            blocked = self.isObstacleAhead(max_x=np.linalg.norm(goal_point))
+            # Only check the stretch we're about to drive. The full 3 m box would see
+            # the obstacle we're going around and stop the detour.
+            blocked = self.isObstacleAhead(max_x=self.DETOUR_LOOKAHEAD + 0.5)
             if blocked and abs(self.getYawError(goal_point)) < self.DETOUR_ALIGNED:
                 # Facing along the path and the stop box is still blocked: something
                 # new is on the path. Drop it; next tick stops and plans from here.
@@ -926,7 +977,7 @@ class PlannerNode(Node):
                 self.clearDetour()
                 self.twist_pub.publish(self.getSmoothed(Twist()))
                 return
-            target = f"detour waypoint {self.detour_idx + 1}/{len(self.detour_map)}"
+            target = f"detour point {self.detour_idx + 1}/{len(self.detour_map)}"
 
         distance_remaining = np.linalg.norm(goal_point)
         yaw_error = self.getYawError(goal_point)
