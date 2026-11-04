@@ -1,0 +1,10 @@
+{
+  "name": "canopy-seedling-planner",
+  "displayName": "Canopy Planner",
+  "description": "Pick seedling locations on a satellite map, start the robot stack, and send the planting plan.",
+  "publisher": "canopy",
+  "version": "1.0.0",
+  "license": "UNLICENSED",
+  "main": "./extension.js",
+  "keywords": ["canopy", "planting", "map"]
+}

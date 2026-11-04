@@ -1,18 +1,42 @@
 {
     "configById": {
         "map!i10gbb": {
-            "zoomLevel": 19
+            "zoomLevel": 19,
+            "customTileUrl": "",
+            "disabledTopics": [
+                "/gps/navsatfix"
+            ],
+            "followTopic": "",
+            "followFrame": "",
+            "layer": "map",
+            "topicColors": {},
+            "maxNativeZoom": 18,
+            "topicConfig": {
+                "/gps/navsatfix": {
+                    "historyMode": "none",
+                    "pointSize": 6
+                },
+                "/vis/geo": {
+                    "historyMode": "none",
+                    "pointSize": 6
+                },
+                "/vis/robot_fix": {
+                    "historyMode": "none",
+                    "pointSize": 6
+                }
+            },
+            "layers": []
         },
         "3D!nav": {
             "cameraState": {
                 "perspective": true,
-                "distance": 13.50900219156396,
-                "phi": 2.2052640300970214,
-                "thetaOffset": -92.82542113163471,
+                "distance": 27.70083102492462,
+                "phi": 3.2928773231490953,
+                "thetaOffset": -92.82542113163896,
                 "targetOffset": [
-                    -0.0014555358209938085,
-                    0.02949239948051903,
-                    0
+                    -0.5132734861058877,
+                    0.430983343245876,
+                    -3.536883479605401e-18
                 ],
                 "target": [
                     0,
@@ -237,69 +261,6 @@
             "sidebarDimension": 240,
             "followingViewWidth": 60,
             "foxglovePanelTitle": "Robot speed"
-        },
-        "RawMessages!dvj3d7": {
-            "defaultExpanded": false,
-            "topicPath": "/planning/distance_to_seedling",
-            "diffEnabled": false
-        },
-        "Plot!speed": {
-            "paths": [
-                {
-                    "value": "/w200_0120/cmd_vel.linear.x",
-                    "enabled": true,
-                    "timestampMethod": "receiveTime",
-                    "label": "cmd v (m/s)"
-                }
-            ],
-            "showXAxisLabels": true,
-            "showYAxisLabels": true,
-            "showLegend": true,
-            "legendDisplay": "floating",
-            "showPlotValuesInLegend": true,
-            "isSynced": true,
-            "xAxisVal": "timestamp",
-            "sidebarDimension": 240,
-            "followingViewWidth": 60,
-            "foxglovePanelTitle": "Commanded Velocity"
-        },
-        "Plot!3ofsefj": {
-            "paths": [
-                {
-                    "timestampMethod": "receiveTime",
-                    "value": "/w200_0120/cmd_vel.angular.z",
-                    "enabled": true,
-                    "label": "cmd ω (rad/s)"
-                }
-            ],
-            "showXAxisLabels": true,
-            "showYAxisLabels": true,
-            "showLegend": true,
-            "legendDisplay": "floating",
-            "showPlotValuesInLegend": true,
-            "isSynced": true,
-            "xAxisVal": "timestamp",
-            "sidebarDimension": 240,
-            "followingViewWidth": 60,
-            "foxglovePanelTitle": "Commanded Angular Velocity"
-        },
-        "RawMessages!candidates": {
-            "topicPath": "/planning/candidates",
-            "diffEnabled": false,
-            "diffMethod": "custom",
-            "diffTopicPath": "",
-            "showFullMessageForDiff": false,
-            "foxglovePanelTitle": "Trajectory candidates",
-            "defaultExpanded": false
-        },
-        "RawMessages!route": {
-            "topicPath": "/planning/remaining_plan",
-            "diffEnabled": false,
-            "diffMethod": "custom",
-            "diffTopicPath": "",
-            "showFullMessageForDiff": false,
-            "foxglovePanelTitle": "Full TSP route",
-            "defaultExpanded": false
         },
         "Image!pot": {
             "cameraState": {
@@ -630,60 +591,11 @@
             "foxglovePanelTitle": "MoveIt planned trajectory",
             "defaultExpanded": false
         },
-        "DiagnosticSummary!diag": {
-            "minLevel": 0,
-            "pinnedIds": [],
-            "topicToRender": "/diagnostics",
-            "hardwareIdFilter": "",
-            "sortByLevel": true,
-            "foxglovePanelTitle": "Diagnostics summary",
-            "secondsUntilStale": 5
-        },
-        "DiagnosticStatusPanel!6jnvpo": {
-            "selectedHardwareId": "Velodyne VLP-16",
-            "selectedName": "velodyne_driver: velodyne_packets topic status",
-            "topicToRender": "/diagnostics"
-        },
-        "RawMessages!diag_raw": {
-            "topicPath": "/diagnostics",
-            "diffEnabled": false,
-            "diffMethod": "custom",
-            "diffTopicPath": "",
-            "showFullMessageForDiff": false,
-            "foxglovePanelTitle": "/diagnostics raw",
-            "defaultExpanded": true,
-            "expansion": {
-                "status": "e",
-                "stamp~header": "c",
-                "0~status": "e",
-                "values~0~status": "e",
-                "0~values~0~status": "e",
-                "1~values~0~status": "e",
-                "2~values~0~status": "e",
-                "3~values~0~status": "e",
-                "4~values~0~status": "e",
-                "5~values~0~status": "e",
-                "6~values~0~status": "e",
-                "7~values~0~status": "e",
-                "8~values~0~status": "e",
-                "9~values~0~status": "e",
-                "10~values~0~status": "e",
-                "11~values~0~status": "e",
-                "12~values~0~status": "e",
-                "13~values~0~status": "e"
-            }
-        },
-        "RawMessages!30uht2t": {
-            "topicPath": "/w200_0120/diagnostics",
-            "diffEnabled": false,
-            "diffMethod": "custom",
-            "diffTopicPath": "",
-            "showFullMessageForDiff": false,
-            "foxglovePanelTitle": "/diagnostics raw",
-            "defaultExpanded": false
+        "Canopy Planner.Seedling Planner!seedplan": {
+            "foxglovePanelTitle": "Seedling Planner"
         },
         "Tab!root": {
-            "activeTabIdx": 0,
+            "activeTabIdx": 2,
             "tabs": [
                 {
                     "title": "Mission Overview",
@@ -693,7 +605,7 @@
                             "direction": "column",
                             "first": "map!i10gbb",
                             "second": "3D!nav",
-                            "splitPercentage": 40
+                            "splitPercentage": 46.94534583642078
                         },
                         "second": {
                             "direction": "column",
@@ -719,30 +631,7 @@
                             },
                             "splitPercentage": 25
                         },
-                        "splitPercentage": 46.516007532956685
-                    }
-                },
-                {
-                    "title": "Navigation",
-                    "layout": {
-                        "direction": "column",
-                        "first": "RawMessages!dvj3d7",
-                        "second": {
-                            "direction": "column",
-                            "first": {
-                                "first": "Plot!speed",
-                                "second": "Plot!3ofsefj",
-                                "direction": "column"
-                            },
-                            "second": {
-                                "direction": "row",
-                                "first": "RawMessages!candidates",
-                                "second": "RawMessages!route",
-                                "splitPercentage": 50
-                            },
-                            "splitPercentage": 66.21285791464072
-                        },
-                        "splitPercentage": 15.496815722796686
+                        "splitPercentage": 46.057517686281955
                     }
                 },
                 {
@@ -790,22 +679,8 @@
                     }
                 },
                 {
-                    "title": "Diagnostics",
-                    "layout": {
-                        "direction": "row",
-                        "first": {
-                            "direction": "column",
-                            "second": "DiagnosticStatusPanel!6jnvpo",
-                            "first": "DiagnosticSummary!diag",
-                            "splitPercentage": 49.97374968613755
-                        },
-                        "second": {
-                            "first": "RawMessages!diag_raw",
-                            "second": "RawMessages!30uht2t",
-                            "direction": "column"
-                        },
-                        "splitPercentage": 49.21080691426255
-                    }
+                    "title": "Seedling Planner",
+                    "layout": "Canopy Planner.Seedling Planner!seedplan"
                 }
             ]
         }
