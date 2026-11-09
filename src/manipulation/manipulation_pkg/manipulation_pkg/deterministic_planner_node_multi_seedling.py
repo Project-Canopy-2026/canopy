@@ -36,29 +36,29 @@ class ManipulationPlannerNode(Node):
         #self.get_logger().info('All ready. Call /planner/trigger to start.')
 
         # seedling 1
-        self.pre_grasp_joints_1 = self.planner.deg_to_rad([-76.3, 23.0, -15.0, 25.2, -182.8, 82.3, -85.6])
-        self.grasp_joints_1 = self.planner.deg_to_rad([-84.2, 31.8, -7.8, 41.8, -185.1, 73.7, -80.9])
-        self.post_grasp_joints_1 = self.planner.deg_to_rad([-84.1, 25.9, -8.3, 40.3, -185.1, 73.7, -80.9])
+        self.pre_grasp_joints_1 = self.planner.deg_to_rad([-87.2, 30.7, -12.7, 24.4, -189.2, 95.5, -87.8])
+        self.grasp_joints_1 = self.planner.deg_to_rad([-87.2, 30.7, -11.9, 31, -189.2, 89.2, -87.8])
+        self.post_grasp_joints_1 = self.planner.deg_to_rad([-87.1, 5.8, -11.9, 24.1, -189.2, 75, -87.8])
                 
         # seedling 2
-        self.pre_grasp_joints_2 = self.planner.deg_to_rad([-76, 22.2, -3, 25.2,  -168.7,  82.3, -85.6])
-        self.grasp_joints_2     = self.planner.deg_to_rad([-76.4, 32.3, -4.5, 39.3, -168.8,  79.2, -85.6])
-        self.post_grasp_joints_2      = self.planner.deg_to_rad([-76.4, 11.4, -6.5, 36.4, -168.8,  59.8, -90])
+        self.pre_grasp_joints_2 = self.planner.deg_to_rad([-87.8, 28.8, -10.6, 30.2, -188.8, 88.2, -87.8])
+        self.grasp_joints_2 = self.planner.deg_to_rad([-87.9, 32.4, -10, 39.5, -188.8, 80.6, -87.8])
+        self.post_grasp_joints_2 = self.planner.deg_to_rad([-87.9, 17.9, -9.5, 36.7, -188.9, 71.1, -87.8])
 
         # seedling 3
-        self.pre_grasp_joints_3 = self.planner.deg_to_rad([-74.2, 25.8, 2.9, 28.8,  -162.3,  85.2, -90])
-        self.grasp_joints_3     = self.planner.deg_to_rad([-74.3, 33.8, 0.8, 42.6, -162.3,  79.3, -90])
-        self.post_grasp_joints_3      = self.planner.deg_to_rad([-74.5, 4.8, -3.6, 42.3, -167,  48.5, -96])
+        self.pre_grasp_joints_3 = self.planner.deg_to_rad([-88.3, 34.2, -9.1, 43.3, -188.9, 78.9, -87.8])
+        self.grasp_joints_3 = self.planner.deg_to_rad([-88.3, 36, -6.9, 49.6, -184.2, 75.6, -87.1])
+        self.post_grasp_joints_3 = self.planner.deg_to_rad([-88.4, 18.8, -7, 46.7, -184.2, 63, -87.1])
 
         # seedling 4
-        self.pre_grasp_joints_4 = self.planner.deg_to_rad([-71.8, 30.2, 9.2, 32,  -153.9,  89.2, -93.8])
-        self.grasp_joints_4     = self.planner.deg_to_rad([-71.7, 34, 4.1, 43.8, -158.3,  77.9, -93.8])
-        self.post_grasp_joints_4      = self.planner.deg_to_rad([-71.8, 12.1, 1.7, 42.3, -158.3,  57, -93.8])
+        self.pre_grasp_joints_4 = self.planner.deg_to_rad([-88.3, 37.9, -7, 52.2, -184.5, 77.3, -87.1])
+        self.grasp_joints_4 = self.planner.deg_to_rad([-88.5, 40.1, -6.3, 61.4, -184.5, 65.5, -87.1])
+        self.grasp_joints_4 = self.planner.deg_to_rad([-88.5, 40.1, -6.3, 61.4, -184.5, 65.5, -87.1])
 
         # seedling 5
-        self.pre_grasp_joints_5 = self.planner.deg_to_rad([-66.6, 30.5, 11.9, 36.4,  -146.7,  85, -93.8])
-        self.grasp_joints_5     = self.planner.deg_to_rad([-66.7, 35.4, 7.3, 49.5, -146.9,  76.1, -98.9])
-        self.post_grasp_joints_5      = self.planner.deg_to_rad([-66.8, 18.2, 4.5, 49.4, -146.9,  58.4, -101])
+        self.pre_grasp_joints_5 = self.planner.deg_to_rad([-89.3, 40.3, -6.4, 62.7, -185.7, 66.4, -87.1])
+        self.grasp_joints_5 = self.planner.deg_to_rad([-89.4, 45.2, -6.1, 73.2, -185.7, 58.7, -87.1])
+        self.post_grasp_joints_5 = self.planner.deg_to_rad([-89.3, 33.1, -5, 72.9, -185.7, 45.4, -87.1])
 
         # shared transit route from the per-seedling lift to the chute, taken from
         # deterministic_planner_node_0413.py — these route around the planting_assembly
