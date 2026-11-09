@@ -171,3 +171,20 @@ cd ~/dev/ros2_ws/src/canopy
 source install/setup.bash
 ros2 topic echo  /cmd_vel
 ``` 
+
+# Using foxglove UI
+
+### On the Jetson
+```bash
+source ~/dev/ros2_ws/install/setup.bash
+ros2 launch ~/dev/ros2_ws/src/canopy/launch/foxglove_operator.launch.py
+```
+
+### Run these on the laptop running Foxglove
+- Open the layout on foxglove, connect to 
+`ws://100.100.137.36:8765`
+- Click "Start planting"
+- Wait until Stack shows running and Mode shows a value. That means the FSM is up.
+- Add seedlings by clicking the map or pasting coordinates.
+- Click "Send plan"
+- Click "Stop" when you're done
