@@ -35,6 +35,7 @@ setup(
             'odom_to_tf_publisher = gnss.odom_to_tf_publisher:main',
             'gnss_interface = gnss.gnss_interface:main',
             'tf_relay = gnss.tf_relay:main',
+            'w200_watchdog = gnss.w200_watchdog:main',
         ],
     },
 )

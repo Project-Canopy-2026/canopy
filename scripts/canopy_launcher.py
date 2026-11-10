@@ -17,7 +17,8 @@ The stack is launched with foxglove:=false, because foxglove_bridge is already
 running next to this node (see launch/foxglove_operator.launch.py) and a second
 bridge would fight over port 8765.
 
-Output of the stack goes to ~/.ros/canopy_launcher/<timestamp>.log.
+Output of the stack goes to ~/.ros/canopy_launcher/canopy_<timestamp>.log, and is
+also printed to this node's terminal (turn off with -p echo_output:=false).
 Stopping this node also stops the stack.
 
 Run:
@@ -26,9 +27,11 @@ Run:
 import datetime
 import json
 import os
+import re
 import shlex
 import signal
 import subprocess
+import sys
 import threading
 import time
 
@@ -43,6 +46,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 DEFAULT_COMMAND = (
     f"ros2 launch {os.path.join(REPO_ROOT, 'launch', 'canopy_launch.launch.py')} foxglove:=false"
 )
+# Terminal color codes; kept on screen, stripped from the log file so it greps cleanly.
+ANSI_ESCAPE = re.compile(rb"\x1b\[[0-?]*[ -/]*[@-~]")
 
 
 class CanopyLauncher(Node):
@@ -52,6 +57,7 @@ class CanopyLauncher(Node):
         self.declare_parameter("launch_command", DEFAULT_COMMAND)
         self.declare_parameter("log_dir", os.path.expanduser("~/.ros/canopy_launcher"))
         self.declare_parameter("sigint_timeout_s", 15.0)
+        self.declare_parameter("echo_output", True)
 
         self.lock = threading.Lock()
         self.proc = None
@@ -59,7 +65,6 @@ class CanopyLauncher(Node):
         self.stopping = False
         self.last_exit_code = None
         self.log_file = ""
-        self.log_handle = None
 
         self.create_service(Trigger, "~/start", self.startCb)
         self.create_service(Trigger, "~/stop", self.stopCb)
@@ -86,25 +91,38 @@ class CanopyLauncher(Node):
             os.makedirs(log_dir, exist_ok=True)
             stamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
             self.log_file = os.path.join(log_dir, f"canopy_{stamp}.log")
+            log_handle = None
             try:
-                self.log_handle = open(self.log_file, "w", buffering=1)
+                log_handle = open(self.log_file, "wb")
+                env = dict(os.environ)
+                # Output goes through a pipe, not a terminal: without these,
+                # Python nodes print in delayed chunks and ROS drops the colors.
+                env["PYTHONUNBUFFERED"] = "1"
+                env["RCUTILS_COLORIZED_OUTPUT"] = "1"
                 # New session so we can signal the whole process group, and so
                 # Ctrl-C in this terminal reaches the stack only through stop().
                 self.proc = subprocess.Popen(
                     shlex.split(self.command()),
-                    stdout=self.log_handle,
+                    stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     stdin=subprocess.DEVNULL,
                     start_new_session=True,
+                    env=env,
                 )
             except Exception as e:  # noqa: BLE001 - report any failure to the UI
-                self.closeLogLocked()
+                if log_handle is not None:
+                    log_handle.close()
                 self.proc = None
                 response.success = False
                 response.message = f"Failed to start: {e}"
                 self.get_logger().error(response.message)
                 return response
 
+            threading.Thread(
+                target=self.copyOutput,
+                args=(self.proc.stdout, log_handle, bool(self.get_parameter("echo_output").value)),
+                daemon=True,
+            ).start()
             self.start_time = time.monotonic()
             self.stopping = False
             self.last_exit_code = None
@@ -137,6 +155,25 @@ class CanopyLauncher(Node):
 
     # ------------------------------------------------------------ process
 
+    @staticmethod
+    def copyOutput(pipe, log_handle, echo):
+        """Copy stack output to the log file and, if echo, to this terminal.
+
+        Runs until the stack (and every process holding its output) exits.
+        """
+        try:
+            for line in iter(pipe.readline, b""):
+                log_handle.write(ANSI_ESCAPE.sub(b"", line))
+                log_handle.flush()
+                if echo:
+                    sys.stdout.buffer.write(line)
+                    sys.stdout.buffer.flush()
+        except (OSError, ValueError):
+            pass  # terminal or file went away during shutdown
+        finally:
+            pipe.close()
+            log_handle.close()
+
     def stopProcess(self, proc):
         """SIGINT the process group, like Ctrl-C, then escalate if it hangs."""
         timeout = float(self.get_parameter("sigint_timeout_s").value)
@@ -165,12 +202,6 @@ class CanopyLauncher(Node):
         self.proc = None
         self.start_time = None
         self.stopping = False
-        self.closeLogLocked()
-
-    def closeLogLocked(self):
-        if self.log_handle is not None:
-            self.log_handle.close()
-            self.log_handle = None
 
     def publishStatus(self):
         with self.lock:

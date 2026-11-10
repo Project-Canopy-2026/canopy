@@ -52,6 +52,18 @@ def generate_launch_description():
         arguments=[str(W200_BRIDGE_CONFIG)],
         additional_env={'FASTRTPS_DEFAULT_PROFILES_FILE': str(W200_BRIDGE_DDS_PROFILE)},
         output='screen',
+        # w200_watchdog kills the bridge when it stops forwarding; launch restarts it.
+        respawn=True,
+        respawn_delay=2.0,
+    )
+
+    # On 11-9 the bridge stopped forwarding without exiting. This watches W200
+    # data arriving through it and kills it when it goes quiet.
+    w200_watchdog = Node(
+        package='gnss',
+        executable='w200_watchdog',
+        name='w200_watchdog',
+        output='screen',
     )
 
     rtk_corrections = Node(
@@ -103,6 +115,7 @@ def generate_launch_description():
     return LaunchDescription([
         OpaqueFunction(function=check_ros_domain),
         w200_bridge,
+        w200_watchdog,
         rtk_corrections,
         swiftnav_gnss_driver,
         gps_static_tf,

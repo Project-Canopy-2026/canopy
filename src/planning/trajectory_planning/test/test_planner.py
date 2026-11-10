@@ -4,9 +4,14 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import rclpy
-from geometry_msgs.msg import Twist
+from rclpy.clock import ClockType
+from rclpy.time import Time
+from canopy_msgs.msg import Mode
+from diagnostic_msgs.msg import DiagnosticStatus
+from geometry_msgs.msg import Twist, TransformStamped
 from nav_msgs.msg import Odometry
 from scipy.spatial.transform.rotation import Rotation as R
+from tf2_ros import TransformException
 
 from trajectory_planning.planner import PlannerNode
 
@@ -244,6 +249,194 @@ class TestPlannerNode(unittest.TestCase):
         target_speed = max(0.0, min(desired_speed + Kp_vel * vel_error, SPEED_LIMIT))
 
         self.assertGreaterEqual(target_speed, 0.0)
+
+
+def rosTime(sec):
+    """Time on the node's clock type (ROS time), as get_clock().now() returns."""
+    return Time(nanoseconds=int(sec * 1e9), clock_type=ClockType.ROS_TIME)
+
+
+class TestStalePoseStop(unittest.TestCase):
+    """The planner holds when map->base_link stops updating (11-9 bridge freeze).
+
+    Time is faked: self.t is the Jetson clock, self.stamp is the map->base_link
+    header stamp, which carries the W200's clock (seconds off from the Jetson's).
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        rclpy.init()
+
+    @classmethod
+    def tearDownClass(cls):
+        rclpy.shutdown()
+
+    def setUp(self):
+        self.node = make_node()
+        # make_node gives every publisher the same mock; split them up.
+        self.node.twist_pub = MagicMock()
+        self.node.status_pub = MagicMock()
+        self.node.facing_downhill_pub = MagicMock()
+
+        self.t = 1000.0
+        self.stamp = 1000.0
+        clock = MagicMock()
+        clock.now.side_effect = lambda: rosTime(self.t)
+        self.node.get_clock = lambda: clock
+
+        self.tf_missing = False
+        self.node.tf_buffer = MagicMock()
+        self.node.tf_buffer.lookup_transform.side_effect = self.lookup
+
+    def tearDown(self):
+        self.node.destroy_node()
+
+    def lookup(self, target, source, _time):
+        if self.tf_missing:
+            raise TransformException("no map->base_link")
+        tf = TransformStamped()
+        tf.header.frame_id = target
+        tf.child_frame_id = source
+        tf.header.stamp = rosTime(self.stamp).to_msg()
+        tf.transform.translation.x = 1.0
+        tf.transform.translation.y = 2.0
+        tf.transform.rotation.w = 1.0
+        return tf
+
+    def tick(self, dt=0.1, pose_moves=True):
+        self.t += dt
+        if pose_moves:
+            self.stamp += dt
+
+    def lastTwist(self):
+        return self.node.twist_pub.publish.call_args[0][0]
+
+    def lastStatus(self):
+        return self.node.status_pub.publish.call_args[0][0]
+
+    def setUpAutoDriving(self):
+        """State in which updateTrajectorySimply reaches the seedling-steering code."""
+        self.node.current_mode = Mode.AUTO
+        self.node.remaining_seedling_count = 5
+        self.node.closest_point_bl = np.array([2.78, 0.0])
+        self.node.closest_point_bl_time = self.node.get_clock().now()
+        self.node.previous_twist = Twist()
+        self.node.previous_twist.linear.x = 0.6
+
+    # ------------------------------------------------------------------
+    # getPoseInMap
+    # ------------------------------------------------------------------
+
+    def test_pose_fresh_while_stamp_advances_whatever_the_clock_offset(self):
+        # The W200 clock was 2.4 s ahead on 11-3; it must not matter which way.
+        for offset in [-100.0, -2.4, 0.0, 2.4, 100.0]:
+            with self.subTest(offset=offset):
+                self.stamp = self.t + offset
+                for _ in range(50):
+                    self.tick()
+                    self.assertIsNotNone(self.node.getPoseInMap())
+
+    def test_pose_returns_map_position(self):
+        x, y, yaw = self.node.getPoseInMap()
+        self.assertAlmostEqual(x, 1.0)
+        self.assertAlmostEqual(y, 2.0)
+        self.assertAlmostEqual(yaw, 0.0)
+
+    def test_pose_stale_after_timeout_when_stamp_stops(self):
+        self.assertIsNotNone(self.node.getPoseInMap())
+        self.tick(0.9, pose_moves=False)
+        self.assertIsNotNone(self.node.getPoseInMap())  # normal gaps are < 0.5 s
+        self.tick(0.2, pose_moves=False)
+        self.assertIsNone(self.node.getPoseInMap())
+
+    def test_pose_recovers_when_stamp_moves_again(self):
+        self.node.getPoseInMap()
+        self.tick(5.0, pose_moves=False)
+        self.assertIsNone(self.node.getPoseInMap())
+        self.tick(0.1)
+        self.assertIsNotNone(self.node.getPoseInMap())
+
+    def test_repeated_calls_in_one_tick_dont_reset_the_timer(self):
+        self.node.getPoseInMap()
+        self.tick(1.5, pose_moves=False)
+        for _ in range(3):
+            self.assertIsNone(self.node.getPoseInMap())
+
+    def test_no_tf_returns_none(self):
+        self.tf_missing = True
+        self.assertIsNone(self.node.getPoseInMap())
+
+    # ------------------------------------------------------------------
+    # holdIfPoseStale
+    # ------------------------------------------------------------------
+
+    def test_hold_does_nothing_when_pose_fresh(self):
+        self.assertFalse(self.node.holdIfPoseStale())
+        self.node.twist_pub.publish.assert_not_called()
+
+    def test_hold_ramps_to_zero_and_warns_when_pose_stale(self):
+        self.node.previous_twist.linear.x = 0.6
+        self.node.getPoseInMap()
+        self.tick(2.0, pose_moves=False)
+
+        speeds = []
+        for _ in range(5):
+            self.assertTrue(self.node.holdIfPoseStale())
+            speeds.append(self.lastTwist().linear.x)
+        self.assertEqual(speeds[-1], 0.0)
+        self.assertEqual(speeds, sorted(speeds, reverse=True))
+        self.assertEqual(self.lastStatus().message, "Robot pose not updating. Holding.")
+        self.assertEqual(self.lastStatus().level, DiagnosticStatus.WARN)
+
+    # ------------------------------------------------------------------
+    # updateTrajectorySimply
+    # ------------------------------------------------------------------
+
+    def test_auto_holds_on_frozen_pose_like_11_9(self):
+        # 11-9: bearing kept arriving with fresh stamps, pose frozen at 2.78 m.
+        self.setUpAutoDriving()
+        self.node.getPoseInMap()
+        for _ in range(20):
+            self.tick(pose_moves=False)
+            self.node.closest_point_bl_time = self.node.get_clock().now()
+            self.node.updateTrajectorySimply()
+        self.assertEqual(self.lastTwist().linear.x, 0.0)
+        self.assertEqual(self.lastStatus().message, "Robot pose not updating. Holding.")
+
+    def test_auto_gets_past_pose_check_when_pose_fresh(self):
+        # With a fresh pose, the next check (stale bearing) is what holds.
+        self.setUpAutoDriving()
+        self.node.closest_point_bl_time = rosTime(self.t - 5.0)
+        self.node.updateTrajectorySimply()
+        self.assertIn("Seedling bearing", self.lastStatus().message)
+
+    def test_teleop_not_blocked_by_stale_pose(self):
+        self.node.current_mode = Mode.TELEOP
+        self.node.cached_teleop = Twist()
+        self.node.cached_teleop.linear.x = 0.1
+        self.node.getPoseInMap()
+        self.tick(5.0, pose_moves=False)
+        self.node.updateTrajectorySimply()
+        self.assertAlmostEqual(self.lastTwist().linear.x, 0.1)
+        self.assertEqual(self.lastStatus().message, "Following teleop commands")
+
+    def test_downhill_turn_holds_on_stale_pose(self):
+        self.node.current_mode = Mode.AUTO
+        self.node.is_turning_downhill = True
+        self.node.ego_yaw = 0.0  # pi away from downhill: would point turn
+        self.node.getPoseInMap()
+        self.tick(5.0, pose_moves=False)
+        self.node.updateTrajectorySimply()
+        self.assertEqual(self.lastTwist().angular.z, 0.0)
+        self.assertEqual(self.lastStatus().message, "Robot pose not updating. Holding.")
+        self.node.facing_downhill_pub.publish.assert_not_called()
+
+    def test_estop_still_checked_first(self):
+        self.node.estopped = True
+        self.node.getPoseInMap()
+        self.tick(5.0, pose_moves=False)
+        self.node.updateTrajectorySimply()
+        self.assertEqual(self.lastStatus().message, "E-stopped")
 
 
 if __name__ == "__main__":

@@ -173,6 +173,13 @@ class PlannerNode(Node):
         self.last_planned_stamp = None # grid stamp we last planned on (plan once per grid)
         self.stop_reason = ""          # shown in the status while stopped for an obstacle
 
+        # Robot pose freshness. map->base_link carries the W200's clock, which is
+        # seconds off from ours, so "now - stamp" can't tell if it's stale. Track
+        # when the stamp last moved forward, by our clock, instead.
+        self.POSE_TIMEOUT = 1.0          # s; normal max gap is 0.43 s (11-3 bags)
+        self.pose_stamp = None           # last map->base_link stamp seen
+        self.pose_stamp_changed = None   # our time when it last changed
+
         self.previous_twist = Twist()
 
         self.create_timer(0.1, self.updateTrajectorySimply)
@@ -334,19 +341,32 @@ class PlannerNode(Node):
         return pts
 
     def getPoseInMap(self):
-        """(x, y, yaw) of base_link in the map frame, or None if TF is missing or old."""
+        """(x, y, yaw) of base_link in the map frame, or None if TF is missing or not updating."""
         try:
             tf = self.tf_buffer.lookup_transform("map", "base_link", rclpy.time.Time())
         except TransformException as ex:
             self.get_logger().warning(f"No map->base_link: {ex}", throttle_duration_sec=2.0)
             return None
-        age = (self.get_clock().now() - Time.from_msg(tf.header.stamp)).nanoseconds * 1e-9
-        if age > 1.0:
-            self.get_logger().warning(f"map->base_link is {age:.1f} s old", throttle_duration_sec=2.0)
+        now = self.get_clock().now()
+        if tf.header.stamp != self.pose_stamp:
+            self.pose_stamp = tf.header.stamp
+            self.pose_stamp_changed = now
+        frozen_for = (now - self.pose_stamp_changed).nanoseconds * 1e-9
+        if frozen_for > self.POSE_TIMEOUT:
+            self.get_logger().warning(f"map->base_link has not updated for {frozen_for:.1f} s",
+                                      throttle_duration_sec=2.0)
             return None
         q = tf.transform.rotation
         yaw = math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
         return tf.transform.translation.x, tf.transform.translation.y, yaw
+
+    def holdIfPoseStale(self):
+        """Stop and return True if the robot pose isn't updating (e.g. W200 bridge stalled, 11-9)."""
+        if self.getPoseInMap() is not None:
+            return False
+        self.publishStatus("Robot pose not updating. Holding.", DiagnosticStatus.WARN)
+        self.twist_pub.publish(self.getSmoothed(Twist()))
+        return True
 
     def blToMap(self, pts_bl, pose):
         """base_link points (Nx2) -> map frame, given the robot pose (x, y, yaw) in map."""
@@ -873,6 +893,8 @@ class PlannerNode(Node):
             return
 
         if self.is_turning_downhill:
+            if self.holdIfPoseStale():
+                return
             self.publishStatus("Turning downhill before planting")
             yaw_error = self.TARGET_DOWNHILL_YAW - self.ego_yaw
             self.get_logger().info(f"{yaw_error}")
@@ -912,6 +934,11 @@ class PlannerNode(Node):
         if self.awaiting_fresh_occ:
             self.twist_pub.publish(self.getSmoothed(Twist()))
             self.publishStatus("Waiting for fresh obstacle data after planting", DiagnosticStatus.WARN)
+            return
+
+        # cost_map_node keeps sending a fresh-looking bearing even when the pose under
+        # it is frozen (11-9: drove on a 100 s old pose), so check the pose itself.
+        if self.holdIfPoseStale():
             return
 
         # The bearing comes from cost_map_node via TF. If it stops arriving, stop
