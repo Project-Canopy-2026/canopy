@@ -65,6 +65,7 @@ class ManipulationPlannerNode(Node):
         # shared transit route from the per-seedling lift to the chute, taken from
         # deterministic_planner_node_0413.py — these route around the planting_assembly
         # collision box, which a direct lift -> drop jump cuts straight through
+        self.before_pre_grasp_joints = self.planner.deg_to_rad([-87.8, -34.4, -5.4, 27, -187.4, 26.7, -87.8])
         self.lift_joints = self.planner.deg_to_rad([-17.4, 0.2, -71.6, 121.7, -184.2, -36.3, -85.6])
         self.intermediate_joints = self.planner.deg_to_rad([-41.3, 26.4, 78.6, 156.6, -223.2, -51, -87.5])
         self.above_chute_joints = self.planner.deg_to_rad([19.7, 41.6, 111.3, 137.2, -233.3, -43.3, -95.6])
@@ -260,6 +261,10 @@ class ManipulationPlannerNode(Node):
         if not self.planner._call_plan_exec():
             return False
         if not self.planner._call_plan_joint(self.lift_joints):
+            return False
+        if not self.planner._call_plan_exec():
+            return False
+        if not self.planner._call_plan_joint(self.before_pre_grasp_joints):
             return False
         if not self.planner._call_plan_exec():
             return False
