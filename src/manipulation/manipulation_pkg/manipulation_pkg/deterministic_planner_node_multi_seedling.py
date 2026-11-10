@@ -53,7 +53,9 @@ class ManipulationPlannerNode(Node):
         # seedling 4
         self.pre_grasp_joints_4 = self.planner.deg_to_rad([-88.3, 37.9, -7, 52.2, -184.5, 77.3, -87.1])
         self.grasp_joints_4 = self.planner.deg_to_rad([-88.5, 40.1, -6.3, 61.4, -184.5, 65.5, -87.1])
-        self.grasp_joints_4 = self.planner.deg_to_rad([-88.5, 40.1, -6.3, 61.4, -184.5, 65.5, -87.1])
+        # TODO: estimated as the midpoint of post_grasp_3 and post_grasp_5, not taught on the arm.
+        # Check at low speed / in sim and replace with the real taught pose.
+        self.post_grasp_joints_4 = self.planner.deg_to_rad([-88.9, 26.0, -6.0, 59.8, -185.0, 54.2, -87.1])
 
         # seedling 5
         self.pre_grasp_joints_5 = self.planner.deg_to_rad([-89.3, 40.3, -6.4, 62.7, -185.7, 66.4, -87.1])

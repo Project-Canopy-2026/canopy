@@ -67,7 +67,7 @@ ping -c 2 192.168.1.202 # velodyne lidar
 ros2 topic echo /w200_0120/platform/bms/state --once
 
 source install/setup.bash
-ros2 launch /home/teamj/dev/ros2_ws/src/canopy/launch/nav_planting.launch.py
+ros2 launch /home/teamj/dev/ros2_ws/src/canopy/launch/canopy_launch.launch.py
 ```
 
 
