@@ -46,8 +46,8 @@ class ManipulationPlannerNode(Node):
         self.post_grasp_joints_2 = self.planner.deg_to_rad([-87.9, 17.9, -9.5, 36.7, -188.9, 71.1, -87.8])
 
         # seedling 3
-        self.pre_grasp_joints_3 = self.planner.deg_to_rad([-88.3, 34.2, -9.1, 43.3, -188.9, 78.9, -87.8])
-        self.grasp_joints_3 = self.planner.deg_to_rad([-88.3, 36, -6.9, 49.6, -184.2, 75.6, -87.1])
+        self.pre_grasp_joints_3 = self.planner.deg_to_rad([-89.3, 32.4, -6.6, 41.5, -185.7, 80.1, -87.1])
+        self.grasp_joints_3 = self.planner.deg_to_rad([-89.3, 35.4, -6.3, 50.1, -185.7, 73.3, -87.1])
         self.post_grasp_joints_3 = self.planner.deg_to_rad([-88.4, 18.8, -7, 46.7, -184.2, 63, -87.1])
 
         # seedling 4
