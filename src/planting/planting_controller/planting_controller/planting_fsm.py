@@ -21,7 +21,7 @@ class State(enum.Enum):
     TAMPING_DOWN_0  = 'TAMPING_DOWN_0'  # linak_2 GOTO pre_tamp_distance_cm, a short pre-press [transition: DONE:LINAK2 or STALL → publish /chute_in_position]
     WAIT_SEEDLING   = 'WAIT_SEEDLING'   # wait for seedling_dropped topic [transition: seedling_dropped]
     TAMPING_DOWN_1  = 'TAMPING_DOWN_1'  # linak_2 GOTO tamping_distance_cm [transition: DONE:LINAK2 or STALL]
-    TAMPING_LIFT    = 'TAMPING_LIFT'    # linak_2 UP tamping_distance_cm / 2 [transition: DONE:LINAK2]
+    TAMPING_LIFT    = 'TAMPING_LIFT'    # linak_2 UP tamping_lift_cm from where the press stopped [transition: DONE:LINAK2]
     TAMPING_DOWN_2  = 'TAMPING_DOWN_2'  # linak_2 GOTO tamping_distance_cm again [transition: DONE:LINAK2 or STALL]
     TAMPING_RETRACT = 'TAMPING_RETRACT' # linak_2 HOME [transition: DONE:LINAK2]
     SHIFT_TO_AUGER  = 'SHIFT_TO_AUGER'  # stepper returns [transition: DONE:STEPPER]
@@ -44,6 +44,7 @@ _PARAM_TYPES = {
     'drilling_dwell':       float,
     'pre_tamp_distance_cm': float,
     'tamping_distance_cm':  float,
+    'tamping_lift_cm':      float,
     'shift_distance_cm':    float,
     'auger_rpm':            int,
     'fsr_abort_voltage':    float,
@@ -93,8 +94,10 @@ class PlantingFsmNode(Node):
       drilling_dwell        float  dwell in soil (s)
       pre_tamp_distance_cm  float  LINAK_2 depth (cm) for the short pre-press done
                                    before the seedling is dropped
-      tamping_distance_cm   float  LINAK_2 tamp depth from home (cm), pressed twice;
-                                   the lift between presses is half of it
+      tamping_distance_cm   float  LINAK_2 tamp depth from home (cm), pressed twice
+      tamping_lift_cm       float  how far LINAK_2 backs off between the two
+                                   presses (cm). RELATIVE, not a depth: from
+                                   28 cm a lift of 10 ends up at 18 cm
       shift_distance_cm     float  stepper travel distance (cm) — speed locked at 270 RPM in firmware
       auger_rpm             int    BLDC RPM
       fsr_abort_voltage     float  abort the drill above this FSR voltage
@@ -115,11 +118,12 @@ class PlantingFsmNode(Node):
         # max FSR seens around 3.3 V
         self.declare_parameter('drilling_distance_cm', 30.0)        
         self.declare_parameter('drilling_dwell',       6.0)
-        self.declare_parameter('pre_tamp_distance_cm', 5.0)
-        self.declare_parameter('tamping_distance_cm',  25.0)
+        self.declare_parameter('pre_tamp_distance_cm', 15.0)
+        self.declare_parameter('tamping_distance_cm',  27.0)
+        self.declare_parameter('tamping_lift_cm',      15.0) # relative distance
         self.declare_parameter('shift_distance_cm',    23.0) # don't change
         self.declare_parameter('auger_rpm',            75)
-        self.declare_parameter('fsr_abort_voltage',    3.5)
+        self.declare_parameter('fsr_abort_voltage',    3.6)
         self.declare_parameter('fsr_poll_hz',          10.0)
         self.declare_parameter('fsr_abort_seconds',    1.0)
 
@@ -128,6 +132,7 @@ class PlantingFsmNode(Node):
         # self.declare_parameter('drilling_dwell',       6.0)
         # self.declare_parameter('pre_tamp_distance_cm', 5.0)
         # self.declare_parameter('tamping_distance_cm',  5.0)
+        # self.declare_parameter('tamping_lift_cm',      2.5)
         # self.declare_parameter('shift_distance_cm',    23.0) # measured
         # self.declare_parameter('auger_rpm',            75)
         # self.declare_parameter('fsr_abort_voltage',    3.5)
@@ -479,9 +484,16 @@ class PlantingFsmNode(Node):
             # advances on DONE:LINAK2 — or STALL, the tamper hitting soil
 
         elif state == State.TAMPING_LIFT:
-            # Relative, so it lifts from wherever the press stopped on the soil.
-            # Half the depth, so it can never lift past home.
-            lift = self._params['tamping_distance_cm']
+            # Backs off tamping_lift_cm from wherever the press ACTUALLY
+            # stopped, not from the commanded depth: UP is relative, computed
+            # by the driver against live TPDO position. At 28 cm a lift of 10
+            # goes to 18; a press that stalled short at 20 cm goes to 10.
+            #
+            # A lift longer than the current depth is safe but probably not
+            # intended: the driver clamps the target to home, warns
+            # ('target ... outside [POS_HOME, POS_MAX] — clamped'), and the
+            # second press then starts from fully retracted.
+            lift = self._params['tamping_lift_cm']
             self._linak(f'LINAK,2,UP,{lift:.2f},FAST')
             # advances on DONE:LINAK2
 
