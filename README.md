@@ -89,6 +89,11 @@ ros2 topic pub --once /planning/complete_plan canopy_msgs/msg/PlantingPlan "{bou
 
 # Arm + Planting
 ### Terminal 0 - CAN Bus Setup for Planting
+CAN bus setup
+```bash
+sudo ip link set can1 down
+sudo ip link set can1 up type can bitrate 125000 restart-ms 100
+```
 ``` bash
 sudo ip link set can0 up type can bitrate 125000
 ip link show can0   # verify
@@ -188,3 +193,10 @@ ros2 launch ~/dev/ros2_ws/src/canopy/launch/foxglove_operator.launch.py
 - Add seedlings by clicking the map or pasting coordinates.
 - Click "Send plan"
 - Click "Stop" when you're done
+
+# Run remotely on a laptop
+```bash
+ssh teamj@100.100.137.36
+tmux new -s test            # reattach later with: tmux attach -t test
+~/dev/ros2_ws/src/canopy/scripts/pretest.sh
+```

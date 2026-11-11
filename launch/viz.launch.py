@@ -34,6 +34,7 @@ def generate_launch_description():
         name="nav_viz_node",
         output="screen",
         parameters=[{"map_origin_lat_lon_alt_degrees": MAP_ORIGIN}],
+        condition=IfCondition(LaunchConfiguration("nav_viz")),
     )
 
     rviz_node = Node(
@@ -58,6 +59,10 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument("rviz", default_value="false", description="Start RViz2"),
+        DeclareLaunchArgument(
+            "nav_viz", default_value="true",
+            description="Start nav_viz_node (Foxglove/RViz debug markers, ~2% of a core)",
+        ),
         DeclareLaunchArgument(
             "foxglove", default_value="true", description="Start foxglove_bridge on port 8765"
         ),

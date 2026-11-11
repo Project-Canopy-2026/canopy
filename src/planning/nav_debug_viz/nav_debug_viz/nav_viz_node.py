@@ -42,7 +42,7 @@ except ImportError:
 ROBOT_LENGTH = 1.52
 ROBOT_WIDTH = 1.38
 
-TRAIL_MAX_POSES = 2000
+TRAIL_MAX_POSES = 500
 TRAIL_MIN_STEP = 0.1  # meters
 HEADING_LINE_LENGTH = 3.0  # meters, for the GeoJSON heading line
 
