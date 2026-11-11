@@ -176,7 +176,7 @@ class PlannerNode(Node):
         # Robot pose freshness. map->base_link carries the W200's clock, which is
         # seconds off from ours, so "now - stamp" can't tell if it's stale. Track
         # when the stamp last moved forward, by our clock, instead.
-        self.POSE_TIMEOUT = 1.0          # s; normal max gap is 0.43 s (11-3 bags)
+        self.POSE_TIMEOUT = 2.0          # s; normal max gap is 0.43 s (11-3 bags)
         self.pose_stamp = None           # last map->base_link stamp seen
         self.pose_stamp_changed = None   # our time when it last changed
 

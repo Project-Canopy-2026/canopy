@@ -89,6 +89,11 @@ ros2 topic pub --once /planning/complete_plan canopy_msgs/msg/PlantingPlan "{bou
 
 # Arm + Planting
 ### Terminal 0 - CAN Bus Setup for Planting
+CAN bus setup
+```bash
+sudo ip link set can1 down
+sudo ip link set can1 up type can bitrate 125000 restart-ms 100
+```
 ``` bash
 sudo ip link set can0 up type can bitrate 125000
 ip link show can0   # verify

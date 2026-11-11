@@ -53,6 +53,7 @@ class CostMapNode(Node):
         self.create_timer(0.1, self.updateCosts)
 
         self.seedling_points = []
+        self.target_seedling = None  # [x, y] in map frame; kept until reached
         self.seedling_pts_bl = []
         self.cached_occ = np.zeros((100, 100))
         self.ego_pos = None
@@ -118,17 +119,17 @@ class CostMapNode(Node):
         #     )
         #     return np.ones((100, 100)) * 100
 
-        closest_distance = 99999.9
-        closest_seedling = None
 
-        for seedling_pt in self.seedling_points:
-            seedling_x, seedling_y = seedling_pt
+        # Pick the nearest seedling once, then stick with it until it's reached.
+        if self.target_seedling is None:
+            self.target_seedling = min(
+                self.seedling_points, key=lambda p: math.dist(self.ego_pos, p)
+            ).copy()
+            self.get_logger().info(f"New target seedling at {self.target_seedling}")
 
-            dist = pdist([self.ego_pos, [seedling_x, seedling_y]])[0]
+        closest_seedling = self.target_seedling
+        closest_distance = math.dist(self.ego_pos, closest_seedling)
 
-            if dist < closest_distance:
-                closest_distance = dist
-                closest_seedling = seedling_pt.copy()
 
         if closest_seedling is None:
             return np.ones((100, 100)) * 100
@@ -293,6 +294,12 @@ class CostMapNode(Node):
             seedling_y = seedling_y - origin_y
 
             self.seedling_points.append([seedling_x, seedling_y])
+        # Keep the current target only while it's still in the plan.
+        # plan_manager removes it when it's reached, and then we pick a new one.
+        if self.target_seedling is not None and not any(
+            math.dist(p, self.target_seedling) < 0.01 for p in self.seedling_points
+        ):
+            self.target_seedling = None
 
     def setUpParameters(self):
         param_desc = ParameterDescriptor()
