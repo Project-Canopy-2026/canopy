@@ -10,7 +10,7 @@ from manipulation_pkg import arm_config as cfg
 from manipulation_pkg.planner_actions import Planner
 
 from geometry_msgs.msg import PointStamped
-from std_msgs.msg import Bool, Empty
+from std_msgs.msg import Bool, Empty, String
 
 class ManipulationPlannerNode(Node):
     def __init__(self):
@@ -96,15 +96,52 @@ class ManipulationPlannerNode(Node):
         #self.create_subscription(PointStamped, 'pot/center_point', self.pot_center_callback, 10)
         self.create_subscription(Empty, '/behavior/do_planting', self.start_planting_callback, 10)
         self.create_subscription(Bool, '/chute_in_position', self.chute_in_position_callback, 10)
+        self.create_subscription(String, "/planting_state", self.planting_state_callback, 10)
 
         self.should_run = False
         self._is_running = False
         #self.pot_center = None
         self.chute_in_position = False
 
+        # set by planting_state_callback when the planting FSM gives up on the current site
+        self._abort = threading.Event()
+        # True when a previous site was aborted while the gripper held a seedling: the arm is
+        # parked above the chute with tray slot `seedlings_completed` still in the gripper
+        self._parked_with_seedling = False
+
         # In sim_mode, auto-trigger each seedling in turn as the previous one finishes
         if self.sim_mode:
             self._sim_timer_handle = self.create_timer(3.0, self._sim_auto_trigger)
+
+    def planting_state_callback(self, msg: String):
+        # The planting FSM gives up on a site in two ways, and the behavior FSM then
+        # drives on to the next site:
+        #   DIGGING_OBSTACLE - only while drilling, i.e. before /chute_in_position, so
+        #                      the arm can not have dropped its seedling yet
+        #   FAULT            - can happen at any point, including after the drop
+        # COMPLETE needs nothing here: the tray slot already advanced at the drop.
+        #
+        # This only raises a flag. run_pick_and_place checks it between moves (each move
+        # blocks until done) and decides what to do from how far it got:
+        #   not grasped yet -> back off to the staging pose, keep the same tray slot
+        #   holding         -> park above the chute, hand it over on the next site
+        #   already dropped -> flag is ignored, the arm finishes its return as normal
+        state = msg.data.strip()
+        if state not in ("DIGGING_OBSTACLE", "FAULT"):
+            return
+        if not self._is_running:
+            return
+
+        if state == "DIGGING_OBSTACLE":
+            self.get_logger().warn(
+                "Obstacle at planting site - stopping manipulation for this site"
+            )
+        else:
+            self.get_logger().error(
+                "Planting FSM faulted - stopping manipulation for this site. "
+                "Planting needs a node restart."
+            )
+        self._abort.set()
 
 
     # def trigger_cb(self, request, response):
@@ -170,49 +207,68 @@ class ManipulationPlannerNode(Node):
         # Step 0: set up collision scene first
         self.planner.setup_collision_scene()
 
-        # Step 1: joint-space to pre-grasp
-        self.get_logger().info('Step 1: Moving to Pre Grasp')
-        if not self.planner._call_plan_joint(pre_grasp_joints):
-            return False
-        if not self.planner._call_plan_exec():
-            return False
+        if self._parked_with_seedling:
+            # the last site was aborted with this seedling in the gripper and the arm
+            # parked above the chute, so skip the pick and go straight to the chute wait
+            self.logger.info(f'Still holding seedling {idx + 1} from the last site - skipping the pick')
+        else:
+            if self._abort.is_set():
+                return self._stop_without_seedling(idx, retreat=())
 
-        # Step 2: open gripper
-        self.logger.info('Step 2: Open gripper...')
-        if not self.planner.open_gripper():
-            self.logger.error('Failed at step 2')
-            return False
-
-        # move to grasp
-        self.get_logger().info('Step 3: Moving towards to grasp...')
-        if not self.planner._call_plan_joint(grasp_joints):
-            return False
-        if not self.planner._call_plan_exec():
-            return False
-
-        #Step 4: close gripper
-        self.logger.info('Step 4: Close gripper...')
-        if not self.planner.close_gripper():
-            self.logger.error('Failed at step 4')
-            return False
-
-        # Step 5: lift
-        self.get_logger().info('Step 5: Lifting...')
-        if not self.planner._call_plan_joint(post_grasp_joints):
-            return False
-        if not self.planner._call_plan_exec():
-            return False
-
-        # Step 6: transit around the planting assembly to above the chute
-        self.get_logger().info('Step 6: Transiting to above chute')
-        for name, joints in (('transit', self.lift_joints),
-                             ('intermediate', self.intermediate_joints),
-                             ('above chute', self.above_chute_joints)):
-            self.get_logger().info(f'Step 6: Moving to {name}')
-            if not self.planner._call_plan_joint(joints):
+            # Step 1: joint-space to pre-grasp
+            self.get_logger().info('Step 1: Moving to Pre Grasp')
+            if not self.planner._call_plan_joint(pre_grasp_joints):
                 return False
             if not self.planner._call_plan_exec():
                 return False
+
+            if self._abort.is_set():
+                return self._stop_without_seedling(idx, retreat=(self.before_pre_grasp_joints,))
+
+            # Step 2: open gripper
+            self.logger.info('Step 2: Open gripper...')
+            if not self.planner.open_gripper():
+                self.logger.error('Failed at step 2')
+                return False
+
+            # move to grasp
+            self.get_logger().info('Step 3: Moving towards to grasp...')
+            if not self.planner._call_plan_joint(grasp_joints):
+                return False
+            if not self.planner._call_plan_exec():
+                return False
+
+            # last point to back out empty-handed; once the gripper closes the seedling
+            # is out of the tray and gets held instead
+            if self._abort.is_set():
+                return self._stop_without_seedling(
+                    idx, retreat=(pre_grasp_joints, self.before_pre_grasp_joints))
+
+            #Step 4: close gripper
+            self.logger.info('Step 4: Close gripper...')
+            if not self.planner.close_gripper():
+                self.logger.error('Failed at step 4')
+                return False
+
+            # Step 5: lift
+            self.get_logger().info('Step 5: Lifting...')
+            if not self.planner._call_plan_joint(post_grasp_joints):
+                return False
+            if not self.planner._call_plan_exec():
+                return False
+
+            # Step 6: transit around the planting assembly to above the chute.
+            # An abort while holding still finishes this, since above the chute is
+            # where the held seedling gets parked.
+            self.get_logger().info('Step 6: Transiting to above chute')
+            for name, joints in (('transit', self.lift_joints),
+                                 ('intermediate', self.intermediate_joints),
+                                 ('above chute', self.above_chute_joints)):
+                self.get_logger().info(f'Step 6: Moving to {name}')
+                if not self.planner._call_plan_joint(joints):
+                    return False
+                if not self.planner._call_plan_exec():
+                    return False
 
         # wait above the chute, not at the drop pose, so the arm stays clear
         # of the chute's space until it reports itself in position
@@ -221,9 +277,12 @@ class ManipulationPlannerNode(Node):
             self.chute_in_position = True
         else:
             self.logger.info(f"chute_in_position: {self.chute_in_position}")
-            while not self.chute_in_position:
+            while not self.chute_in_position and not self._abort.is_set():
                 self.logger.info('Waiting for chute to be in position before dropping seedling...')
                 time.sleep(0.5)
+
+        if self._abort.is_set():
+            return self._park_with_seedling(idx, from_drop_pose=False)
 
         # Step 6b: descend into the chute
         self.get_logger().info('Step 6b: Moving to drop the seedling into chute')
@@ -231,6 +290,11 @@ class ManipulationPlannerNode(Node):
             return False
         if not self.planner._call_plan_exec():
             return False
+
+        # a FAULT can still land during the descent; keep the seedling rather than
+        # dropping it into a chute that is no longer being run
+        if self._abort.is_set():
+            return self._park_with_seedling(idx, from_drop_pose=True)
 
         # Step 7: release
         self.logger.info('Step 7: Releasing seedling...')
@@ -247,6 +311,7 @@ class ManipulationPlannerNode(Node):
 
             # only advance on a successful drop, so a failed attempt retries the same seedling
             self.seedlings_completed += 1
+            self._parked_with_seedling = False
         else:
             self.logger.info('Received chute not in position command, aborting drop')
 
@@ -264,13 +329,11 @@ class ManipulationPlannerNode(Node):
             return False
         if not self.planner._call_plan_exec():
             return False
+        # end every run at the staging pose above the tray (the arm's home between
+        # sites): clear of the tray while driving, and the next run's Step 1 goes from
+        # here down to its own pre-grasp
+        self.get_logger().info('Step 8: Moving to home (before pre grasp)')
         if not self.planner._call_plan_joint(self.before_pre_grasp_joints):
-            return False
-        if not self.planner._call_plan_exec():
-            return False
-
-        self.get_logger().info('Step 8: Moving to Pre Grasp')
-        if not self.planner._call_plan_joint(pre_grasp_joints):
             return False
         if not self.planner._call_plan_exec():
             return False
@@ -279,10 +342,39 @@ class ManipulationPlannerNode(Node):
         self.logger.info(f'=== Pick and place complete ({self.seedlings_completed}/{len(self.seedling_joints)} seedlings planted) ===')
         return True
 
+    def _move_to(self, joints):
+        return self.planner._call_plan_joint(joints) and self.planner._call_plan_exec()
+
+    def _stop_without_seedling(self, idx, retreat):
+        # Site aborted before the gripper closed. Back off through `retreat` and leave
+        # seedlings_completed alone, so the next site picks this same tray slot (the
+        # behavior FSM moving on to the next site does not mean the tray moved on).
+        # Retreating to before_pre_grasp puts the arm at the same home pose a normal run
+        # ends at, so the next run's Step 1 is a real move, not a zero-length plan.
+        self.logger.warn(
+            f'Site aborted before grasping - seedling {idx + 1} stays in the tray '
+            f'and will be picked at the next site')
+        for joints in retreat:
+            if not self._move_to(joints):
+                return False
+        return False
+
+    def _park_with_seedling(self, idx, from_drop_pose):
+        # Site aborted while holding the seedling. Keep it in the gripper above the chute;
+        # the next run sees _parked_with_seedling and goes straight to the chute wait.
+        self.logger.warn(
+            f'Site aborted while holding seedling {idx + 1} - parking above the chute '
+            f'and keeping it for the next site')
+        if from_drop_pose and not self._move_to(self.above_chute_joints):
+            return False
+        self._parked_with_seedling = True
+        return False
+
     def run(self):
         while rclpy.ok():
             if self.should_run:
                 self.should_run = False
+                self._abort.clear()
                 self._is_running = True
                 try:
                     self.run_pick_and_place()

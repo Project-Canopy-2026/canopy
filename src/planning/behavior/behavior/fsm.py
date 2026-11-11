@@ -19,7 +19,7 @@ import utm
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from std_msgs.msg import Header
 from canopy_msgs.msg import FailedChecks, HealthCheck, SystemwideStatus, Mode
-from std_msgs.msg import Empty, String, Bool
+from std_msgs.msg import Empty, String, Bool, Int32
 
 # class SystemwideStatus:
 #     HEALTHY = 0
@@ -50,6 +50,9 @@ class FsmNode(Node):
         )
         self.status_pub = self.create_publisher(DiagnosticStatus, "/diagnostics", 1)
         self.do_plant_pub = self.create_publisher(Empty, "/behavior/do_planting", 1)
+        self.planted_count_pub = self.create_publisher(
+            Int32, "/behavior/planting_success_count", 10
+        )
 
         self.create_subscription(
             Empty, "/behavior/on_seedling_reached", self.onSeedlingReachedCb, 1
@@ -74,6 +77,7 @@ class FsmNode(Node):
         self.seedling_reached_distance = 0.8  # meters
         self.is_planting = False
         self.is_turning_downhill = False
+        self.planting_success_count = 0
         #self.PLANTING_DURATION = 10  # seconds
         #self.planting_start_time = time()
 
@@ -98,16 +102,37 @@ class FsmNode(Node):
         #self.planting_start_time = time()
 
     def plantingStateUpdate(self, msg: String):
-        if msg.data.strip() == "COMPLETE" and self.is_planting:
-            self.is_planting = False
+        # Every terminal state of the planting FSM has to release the nav lock.
+        # The FSM only publishes COMPLETE on the success path; an obstacle abort
+        # ends in IDLE and FAULT never leaves itself, so releasing on COMPLETE
+        # alone leaves the robot stopped at the seedling forever.
+        state = msg.data.strip()
+        if state not in ("COMPLETE", "DIGGING_OBSTACLE", "FAULT"):
+            return
+        if not self.is_planting:
+            return
 
-            self.planting_locked_pub.publish(
-                Bool(data=False)
-            )
+        self.is_planting = False
+        self.planting_locked_pub.publish(Bool(data=False))
 
+        if state == "COMPLETE":
+            self.planting_success_count += 1
             self.get_logger().info(
-                "Planting complete. Navigation can resume."
+                f"Planting complete ({self.planting_success_count} planted). "
+                "Navigation can resume."
             )
+        elif state == "DIGGING_OBSTACLE":
+            self.get_logger().warn(
+                "Obstacle at seedling site - nothing planted, skipping. "
+                "Navigation can resume."
+            )
+        else:
+            self.get_logger().error(
+                "Planting FSM faulted - nothing planted, skipping. "
+                "Navigation can resume; planting needs a node restart."
+            )
+
+        self.planted_count_pub.publish(Int32(data=self.planting_success_count))
 
     def publishStatus(self, desc: str, level=DiagnosticStatus.OK):
         self.status_pub.publish(
@@ -124,6 +149,7 @@ class FsmNode(Node):
 
         self.planting_locked_pub.publish(Bool(data=self.is_planting))
         self.turning_downhill_pub.publish(Bool(data=self.is_turning_downhill))
+        self.planted_count_pub.publish(Int32(data=self.planting_success_count))
 
     def requestedModeCb(self, msg: Mode):
         self.get_logger().info(f"Current mode is now {msg.level}")
