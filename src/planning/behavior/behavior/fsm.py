@@ -1,24 +1,24 @@
-import numpy as np
+# import numpy as np
 import rclpy
 from rclpy.node import Node, ParameterDescriptor, ParameterType
-from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
-import json
-from time import time
-from tqdm import tqdm, trange
-from scipy.spatial.distance import pdist, squareform
-from matplotlib import pyplot as plt
-import cv2
+# from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
+# import json
+# from time import time
+# from tqdm import tqdm, trange
+# from scipy.spatial.distance import pdist, squareform
+# from matplotlib import pyplot as plt
+# import cv2
 from enum import IntEnum
 from tf2_ros.buffer import Buffer
 from tf2_ros import TransformException
 from tf2_ros.transform_listener import TransformListener
-import utm
+# import utm
 
 
 # ROS2 message definitions
-from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
-from std_msgs.msg import Header
-from canopy_msgs.msg import FailedChecks, HealthCheck, SystemwideStatus, Mode
+from diagnostic_msgs.msg import DiagnosticStatus
+# from std_msgs.msg import Header
+from canopy_msgs.msg import Mode
 from std_msgs.msg import Empty, String, Bool, Int32
 
 # class SystemwideStatus:
