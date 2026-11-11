@@ -34,6 +34,7 @@ class CostMapNode(Node):
         self.create_subscription(
             Empty, "/behavior/on_seedling_reached", self.onSeedlingReached, 1
         )
+        self.create_subscription(PlantingPlan, "/planning/complete_plan", self.completePlanCb, 1)
 
         self.seedling_dist_map_pub = self.create_publisher(
             OccupancyGrid, "/cost/dist_to_seedlings", 1
@@ -59,6 +60,11 @@ class CostMapNode(Node):
         self.ego_pos = None
         self.ego_yaw = None
 
+    def completePlanCb(self, msg: PlantingPlan):
+        self.get_logger().info("Complete plan received")
+        self.planCb(msg)
+        self.target_seedling = None
+        
     def onSeedlingReached(self, msg: Empty):
         self.get_logger().info("Seedling reached")
 
