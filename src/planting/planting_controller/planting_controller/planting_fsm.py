@@ -17,7 +17,8 @@ class State(enum.Enum):
     DRILLING_DOWN   = 'DRILLING_DOWN'   # linak_1 GOTO drilling_distance_cm [transition: DONE:LINAK1]
     DRILLING_DWELL  = 'DRILLING_DWELL'  # bldc continuous spin [transition: drilling_dwell timer]
     AUGER_RETRACT   = 'AUGER_RETRACT'   # bldc still spinning, linak_1 HOME [transition: DONE:LINAK1]
-    SHIFT_TO_CHUTE  = 'SHIFT_TO_CHUTE'  # bldc stops, stepper moves shift_distance_cm [transition: DONE:STEPPER → publish /chute_in_position]
+    SHIFT_TO_CHUTE  = 'SHIFT_TO_CHUTE'  # bldc stops, stepper moves shift_distance_cm [transition: DONE:STEPPER]
+    TAMPING_DOWN_0  = 'TAMPING_DOWN_0'  # linak_2 GOTO pre_tamp_distance_cm, a short pre-press [transition: DONE:LINAK2 or STALL → publish /chute_in_position]
     WAIT_SEEDLING   = 'WAIT_SEEDLING'   # wait for seedling_dropped topic [transition: seedling_dropped]
     TAMPING_DOWN_1  = 'TAMPING_DOWN_1'  # linak_2 GOTO tamping_distance_cm [transition: DONE:LINAK2 or STALL]
     TAMPING_LIFT    = 'TAMPING_LIFT'    # linak_2 UP tamping_distance_cm / 2 [transition: DONE:LINAK2]
@@ -77,6 +78,8 @@ class PlantingFsmNode(Node):
     only place they are set; planting_bringup.launch.py does not pass them):
       drilling_distance_cm  float  LINAK_1 drill depth from home (cm)
       drilling_dwell        float  dwell in soil (s)
+      pre_tamp_distance_cm  float  LINAK_2 depth (cm) for the short pre-press done
+                                   before the seedling is dropped
       tamping_distance_cm   float  LINAK_2 tamp depth from home (cm), pressed twice;
                                    the lift between presses is half of it
       shift_distance_cm     float  stepper travel distance (cm) — speed locked at 270 RPM in firmware
@@ -114,6 +117,7 @@ class PlantingFsmNode(Node):
         # Retracts take no parameter: they go HOME.
         # self.declare_parameter('drilling_distance_cm', 28.0)
         # self.declare_parameter('drilling_dwell',       6.0)
+        # self.declare_parameter('pre_tamp_distance_cm', 5.0)
         # self.declare_parameter('tamping_distance_cm',  18.0)
         # self.declare_parameter('shift_distance_cm',    23.0) # measured
         # self.declare_parameter('auger_rpm',            75)
@@ -129,6 +133,7 @@ class PlantingFsmNode(Node):
         # ── INDOOR PARAMS ────────────────────────────────────────────────────
         self.declare_parameter('drilling_distance_cm', 5.0)
         self.declare_parameter('drilling_dwell',       6.0)
+        self.declare_parameter('pre_tamp_distance_cm', 5.0)
         self.declare_parameter('tamping_distance_cm',  5.0)
         self.declare_parameter('shift_distance_cm',    23.0) # measured
         self.declare_parameter('auger_rpm',            75)
@@ -186,9 +191,10 @@ class PlantingFsmNode(Node):
 
         if token == 'DONE:STEPPER':
             if state == State.SHIFT_TO_CHUTE:
-                self._chute_pos_pub.publish(Bool(data=True))
-                self.get_logger().info('→ /chute_in_position: True')
-                self._enter(State.WAIT_SEEDLING)
+                # The chute is over the hole, but the arm is not told to drop
+                # yet — TAMPING_DOWN_0 pre-presses the hole first and
+                # publishes /chute_in_position when that press finishes.
+                self._enter(State.TAMPING_DOWN_0)
             elif state == State.SHIFT_TO_AUGER:
                 self._enter(State.COMPLETE)
         elif token.startswith('FSR:'):
@@ -268,7 +274,13 @@ class PlantingFsmNode(Node):
         """Tamper actuator. A stall on a press is the tamper meeting soil — expected."""
         if outcome not in ('DONE', 'STALL'):
             return
-        if state == State.TAMPING_DOWN_1:
+        if state == State.TAMPING_DOWN_0:
+            # Pre-press finished (or stalled on soil). Only now is it safe for
+            # the arm to drop the seedling down the chute.
+            self._chute_pos_pub.publish(Bool(data=True))
+            self.get_logger().info('→ /chute_in_position: True')
+            self._enter(State.WAIT_SEEDLING)
+        elif state == State.TAMPING_DOWN_1:
             self._enter(State.TAMPING_LIFT)
         elif state == State.TAMPING_LIFT:
             self._enter(State.TAMPING_DOWN_2)
@@ -405,7 +417,15 @@ class PlantingFsmNode(Node):
             self._arduino('bldc,stop')
             shift_mm = p('shift_distance_cm').get_parameter_value().double_value * 10.0
             self._arduino(f'stepper,left,{shift_mm:.1f}')
-            # advances on DONE:STEPPER → publishes /chute_in_position True → WAIT_SEEDLING
+            # advances on DONE:STEPPER → TAMPING_DOWN_0
+
+        elif state == State.TAMPING_DOWN_0:
+            # Short pre-press before the seedling goes in. Absolute depth from
+            # home, like the other presses, so it cannot drive past the stroke.
+            depth = p('pre_tamp_distance_cm').get_parameter_value().double_value
+            self._linak(f'LINAK,2,GOTO,{depth:.2f},FAST')
+            # advances on DONE:LINAK2 — or STALL, the tamper hitting soil —
+            # then publishes /chute_in_position True → WAIT_SEEDLING
 
         elif state == State.WAIT_SEEDLING:
             self.get_logger().info('Waiting for seedling_dropped...')
