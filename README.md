@@ -193,3 +193,10 @@ ros2 launch ~/dev/ros2_ws/src/canopy/launch/foxglove_operator.launch.py
 - Add seedlings by clicking the map or pasting coordinates.
 - Click "Send plan"
 - Click "Stop" when you're done
+
+# Run remotely on a laptop
+```bash
+ssh teamj@100.100.137.36
+tmux new -s test            # reattach later with: tmux attach -t test
+~/dev/ros2_ws/src/canopy/scripts/pretest.sh
+```

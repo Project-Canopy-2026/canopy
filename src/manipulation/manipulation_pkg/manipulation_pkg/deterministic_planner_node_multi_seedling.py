@@ -60,7 +60,8 @@ class ManipulationPlannerNode(Node):
         # seedling 5
         self.pre_grasp_joints_5 = self.planner.deg_to_rad([-89.3, 40.3, -6.4, 62.7, -185.7, 66.4, -87.1])
         self.grasp_joints_5 = self.planner.deg_to_rad([-89.4, 45.2, -6.1, 73.2, -185.7, 58.7, -87.1])
-        self.post_grasp_joints_5 = self.planner.deg_to_rad([-89.3, 33.1, -5, 72.9, -185.7, 45.4, -87.1])
+        # self.post_grasp_joints_5 = self.planner.deg_to_rad([-89.3, 33.1, -5, 72.9, -185.7, 45.4, -87.1])
+        self.post_grasp_joints_5 = self.planner.deg_to_rad([-87.8, -34.4, -5.4, 27, -187.4, 26.7, -87.8])
 
         # shared transit route from the per-seedling lift to the chute, taken from
         # deterministic_planner_node_0413.py — these route around the planting_assembly
