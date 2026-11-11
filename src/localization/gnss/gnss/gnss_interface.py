@@ -2,7 +2,9 @@
 
 import numpy as np
 import rclpy
+from rclpy.executors import ExternalShutdownException, SingleThreadedExecutor
 from rclpy.node import Node
+import threading
 import utm
 import math
 
@@ -50,7 +52,16 @@ class gnss_interface(Node):
 
         self.tf_broadcaster = TransformBroadcaster(self)
         self.tf_buffer = Buffer()
-        self.tf_listener = TransformListener(self.tf_buffer, self)
+        # Read /tf on a separate node and thread. On this node's thread the TF
+        # callbacks wait behind the 43 Hz IMU callback, so map->odom got stamped
+        # with an odom->base_link 1-30 s old (11-10) and the pose looked frozen.
+        # (TransformListener(spin_thread=True) on this node doesn't work in Humble:
+        # it moves the whole node to the listener's executor.)
+        self.tf_node = rclpy.create_node("gnss_interface_tf_listener")
+        self.tf_listener = TransformListener(self.tf_buffer, self.tf_node)
+        self.tf_executor = SingleThreadedExecutor()
+        self.tf_executor.add_node(self.tf_node)
+        threading.Thread(target=self.spinTfListener, daemon=True).start()
 
         self.odom_pub = self.create_publisher(Odometry, "/gnss/odom", 10)
         self.yaw_pub = self.create_publisher(Float32, "/gnss/yaw", 10)
@@ -83,6 +94,12 @@ class gnss_interface(Node):
         self.last_imu_time = None
         self.last_imu_yaw = None     # yaw from the IMU's own orientation, used to bridge gaps
         self.t_map_base = None       # last GPS-derived base_link position
+
+    def spinTfListener(self):
+        try:
+            self.tf_executor.spin()
+        except ExternalShutdownException:
+            pass  # rclpy shut down
 
     def imuCb(self, msg: Imu):
         t = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9

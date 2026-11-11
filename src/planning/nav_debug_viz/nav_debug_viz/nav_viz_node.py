@@ -42,8 +42,11 @@ except ImportError:
 ROBOT_LENGTH = 1.52
 ROBOT_WIDTH = 1.38
 
-TRAIL_MAX_POSES = 2000
+TRAIL_MAX_POSES = 500  # ~50 m; the trail and GeoJSON cost grows with this
 TRAIL_MIN_STEP = 0.1  # meters
+# The trail Path and the GeoJSON are the expensive outputs, so they go out every
+# SLOW_EVERY_N_TICKS ticks (1 Hz) and the robot marker every tick (5 Hz).
+SLOW_EVERY_N_TICKS = 5
 HEADING_LINE_LENGTH = 3.0  # meters, for the GeoJSON heading line
 
 GREY = (0.6, 0.6, 0.6, 0.8)
@@ -96,6 +99,8 @@ class NavVizNode(Node):
         self.ego_pose = None  # (x, y, yaw)
         self.trail = Path()
         self.trail.header.frame_id = "map"
+        self.trail_lonlat = []  # [lon, lat] of each trail pose, converted once when added
+        self.tick = 0
 
         self.create_timer(0.2, self.update)
 
@@ -172,7 +177,10 @@ class NavVizNode(Node):
         self.publishSeedlings(order)
         self.publishGlobalPath(order)
         self.publishRobot()
-        self.publishGeo(order)
+        self.tick += 1
+        if self.tick % SLOW_EVERY_N_TICKS == 0:
+            self.publishTrail()
+            self.publishGeo(order)
 
     def updateEgoPose(self):
         try:
@@ -200,8 +208,11 @@ class NavVizNode(Node):
         pose.pose.position.y = t.y
         pose.pose.orientation = q
         poses.append(pose)
+        lat, lon = self.mapToLatLon(t.x, t.y)
+        self.trail_lonlat.append([float(lon), float(lat)])
         if len(poses) > TRAIL_MAX_POSES:
             del poses[: len(poses) - TRAIL_MAX_POSES]
+            del self.trail_lonlat[: len(self.trail_lonlat) - TRAIL_MAX_POSES]
 
     # ------------------------------------------------------------------
     # RViz outputs
@@ -305,9 +316,6 @@ class NavVizNode(Node):
 
         self.robot_pub.publish(MarkerArray(markers=[body, arrow, text]))
 
-        self.trail.header.stamp = stamp
-        self.trail_pub.publish(self.trail)
-
         lat, lon = self.mapToLatLon(x, y)
         fix = NavSatFix()
         fix.header.stamp = stamp
@@ -316,6 +324,10 @@ class NavVizNode(Node):
         fix.latitude, fix.longitude = float(lat), float(lon)
         fix.position_covariance_type = NavSatFix.COVARIANCE_TYPE_UNKNOWN
         self.robot_fix_pub.publish(fix)
+
+    def publishTrail(self):
+        self.trail.header.stamp = self.get_clock().now().to_msg()
+        self.trail_pub.publish(self.trail)
 
     # ------------------------------------------------------------------
     # Foxglove Map output
@@ -361,11 +373,10 @@ class NavVizNode(Node):
                 "heading", "#ffff00",
             ))
 
-        trail_ll = [self.mapToLatLon(p.pose.position.x, p.pose.position.y)
-                    for p in self.trail.poses[::5]]
-        if len(trail_ll) > 1:
+        trail_lonlat = self.trail_lonlat[::5]
+        if len(trail_lonlat) > 1:
             features.append(feature(
-                {"type": "LineString", "coordinates": [[lon, lat] for lat, lon in trail_ll]},
+                {"type": "LineString", "coordinates": trail_lonlat},
                 "robot trail", "#3366ff",
             ))
 
