@@ -12,17 +12,15 @@ Then in Foxglove (ws://<jetson-ip>:8765), tab 3:
 
 Do not also run canopy_launch.launch.py by hand: it includes viz.launch.py,
 which starts a second foxglove_bridge on the same port.
-
-The stack's output is printed in this terminal (and saved to
-~/.ros/canopy_launcher/canopy_<time>.log). foxglove_bridge only prints warnings.
 """
 
 import os
 
+from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription
+from launch.launch_description_sources import AnyLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
@@ -30,16 +28,14 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 def generate_launch_description():
     launch_command = LaunchConfiguration("launch_command")
 
-    # Started directly (not via foxglove_bridge_launch.xml) so it can run at WARN:
-    # at INFO it logs every client connect and subscribe, which buries the stack's
-    # output in this terminal. Its full log is still in ~/.ros/log.
-    foxglove_bridge = Node(
-        package="foxglove_bridge",
-        executable="foxglove_bridge",
-        name="foxglove_bridge",
-        parameters=[{"port": 8765, "address": "0.0.0.0"}],
-        ros_arguments=["--log-level", "warn"],
-        output="screen",
+    foxglove_bridge = IncludeLaunchDescription(
+        AnyLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory("foxglove_bridge"),
+                "launch",
+                "foxglove_bridge_launch.xml",
+            )
+        ),
     )
 
     launcher = ExecuteProcess(
@@ -52,9 +48,6 @@ def generate_launch_description():
         ],
         name="canopy_launcher",
         output="screen",
-        # The launcher prints the stack's output, which already names each node;
-        # don't add a "[canopy_launcher-N]" prefix in front of every line.
-        output_format="{line}",
         # Give the launcher time to Ctrl-C the robot stack before ros2 launch
         # escalates to SIGTERM / SIGKILL on shutdown.
         sigterm_timeout="30",
