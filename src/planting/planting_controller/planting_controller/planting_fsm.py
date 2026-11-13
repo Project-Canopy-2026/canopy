@@ -116,10 +116,10 @@ class PlantingFsmNode(Node):
         # warns, but only a value it cannot cast at all stops the node.
         # auger 30 cm, tamping 12 cm (110/26 field test downhill)
         # max FSR seens around 3.3 V
-        self.declare_parameter('drilling_distance_cm', 30.0)        
+        self.declare_parameter('drilling_distance_cm', 3.0)        
         self.declare_parameter('drilling_dwell',       6.0)
-        self.declare_parameter('pre_tamp_distance_cm', 15.0)
-        self.declare_parameter('tamping_distance_cm',  27.0)
+        self.declare_parameter('pre_tamp_distance_cm', 10.0)
+        self.declare_parameter('tamping_distance_cm',  25.0)
         self.declare_parameter('tamping_lift_cm',      15.0) # relative distance
         self.declare_parameter('shift_distance_cm',    23.0) # don't change
         self.declare_parameter('auger_rpm',            75)
