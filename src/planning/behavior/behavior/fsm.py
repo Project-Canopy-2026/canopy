@@ -29,6 +29,23 @@ from std_msgs.msg import Empty, String, Bool, Int32
 
 
 class FsmNode(Node):
+    # Planting states that release the navigation lock.
+    #
+    # DIGGING_OBSTACLE is deliberately NOT one of them. The planting FSM
+    # publishes that state the instant it decides to abort - the auger is
+    # still in the soil and has only just been sent LINAK,1,STOP - so
+    # releasing there lets the rover drive off with the drill in the ground.
+    # The abort path continues: STOPPED:LINAK1 -> LINAK,1,HOME -> on its
+    # DONE/STALL the auger motor is stopped and the FSM enters IDLE. The
+    # success path ends COMPLETE -> IDLE. So IDLE is the one state that means
+    # "auger home, nothing turning" on both paths, and it is the only safe
+    # point to hand navigation back.
+    #
+    # FAULT stays in the list because it is terminal - it never reaches IDLE,
+    # so nothing else would ever release the lock and the rover would sit at
+    # the seedling forever.
+    PLANTING_RELEASE_STATES = ("IDLE", "FAULT")
+
     def __init__(self):
         super().__init__("behavior_fsm")
 
@@ -78,6 +95,10 @@ class FsmNode(Node):
         self.is_planting = False
         self.is_turning_downhill = False
         self.planting_success_count = 0
+        # Last state seen on /planting_state. IDLE is reached from both
+        # COMPLETE and the obstacle abort, so the state BEFORE it is what says
+        # which outcome this was.
+        self.planting_state = None
         #self.PLANTING_DURATION = 10  # seconds
         #self.planting_start_time = time()
 
@@ -102,34 +123,55 @@ class FsmNode(Node):
         #self.planting_start_time = time()
 
     def plantingStateUpdate(self, msg: String):
-        # Every terminal state of the planting FSM has to release the nav lock.
-        # The FSM only publishes COMPLETE on the success path; an obstacle abort
-        # ends in IDLE and FAULT never leaves itself, so releasing on COMPLETE
-        # alone leaves the robot stopped at the seedling forever.
+        # Every terminal state of the planting FSM has to release the nav lock,
+        # but only once the hardware is actually parked - see
+        # PLANTING_RELEASE_STATES for why that is IDLE and not COMPLETE or
+        # DIGGING_OBSTACLE.
         state = msg.data.strip()
-        if state not in ("COMPLETE", "DIGGING_OBSTACLE", "FAULT"):
-            return
+        prev, self.planting_state = self.planting_state, state
+
         if not self.is_planting:
+            return
+
+        if state == "DIGGING_OBSTACLE":
+            # Holding the lock on purpose: the auger is in the hole and the
+            # retract has only just been commanded. The release comes with the
+            # IDLE that follows it, a drill-depth retract later.
+            self.get_logger().warn(
+                "Obstacle at seedling site - drill aborting. Holding "
+                "navigation until the auger is back home."
+            )
+            return
+
+        if state not in self.PLANTING_RELEASE_STATES:
             return
 
         self.is_planting = False
         self.planting_locked_pub.publish(Bool(data=False))
 
-        if state == "COMPLETE":
+        if state == "FAULT":
+            # FAULT e-stops the Arduino motors but does NOT retract LINAK 1,
+            # so unlike IDLE this does not promise the auger is out of the
+            # ground. Released anyway, because nothing else ever will be.
+            self.get_logger().error(
+                "Planting FSM faulted - nothing planted, skipping. "
+                "Navigation can resume; planting needs a node restart. "
+                "WARNING: a fault does not retract the auger - check it is "
+                "clear of the ground before driving."
+            )
+        elif prev == "COMPLETE":
             self.planting_success_count += 1
             self.get_logger().info(
                 f"Planting complete ({self.planting_success_count} planted). "
                 "Navigation can resume."
             )
-        elif state == "DIGGING_OBSTACLE":
-            self.get_logger().warn(
-                "Obstacle at seedling site - nothing planted, skipping. "
-                "Navigation can resume."
-            )
         else:
-            self.get_logger().error(
-                "Planting FSM faulted - nothing planted, skipping. "
-                "Navigation can resume; planting needs a node restart."
+            # IDLE off the obstacle path (prev == DIGGING_OBSTACLE), or off any
+            # other bail-out. Either way the auger is home and nothing was
+            # planted here.
+            self.get_logger().warn(
+                f"Planting ended at IDLE via {prev} - nothing planted, "
+                "skipping. Auger is home; navigation can resume."
             )
 
         self.planted_count_pub.publish(Int32(data=self.planting_success_count))
