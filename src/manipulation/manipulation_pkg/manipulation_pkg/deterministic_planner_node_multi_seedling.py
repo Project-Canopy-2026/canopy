@@ -68,9 +68,8 @@ class ManipulationPlannerNode(Node):
         self.before_pre_grasp_joints = self.planner.deg_to_rad([-87.8, -34.4, -5.4, 27, -187.4, 26.7, -87.8])
         self.lift_joints = self.planner.deg_to_rad([-17.4, 0.2, -71.6, 121.7, -184.2, -36.3, -85.6])
         self.intermediate_joints = self.planner.deg_to_rad([-41.3, 26.4, 78.6, 156.6, -223.2, -51, -87.5])
-        self.above_chute_joints = self.planner.deg_to_rad([19.7, 41.6, 111.3, 137.2, -233.3, -43.3, -95.6])
-        self.drop_joints        = self.planner.deg_to_rad([-24.3, 43.3, 117.7, 86.4, -224.6, -13.4, -85.6])
-
+        self.above_chute_joints = self.planner.deg_to_rad([19.9, 25.1, 87, 145.5, -214.9, -42.2, -93.1])
+        self.drop_joints        = self.planner.deg_to_rad([-13.5, 30.3, 102.2, 100.2, -202.5, -13, -99.9])
         # picked in order, one per /behavior/do_planting command
         self.seedling_joints = [
             (self.pre_grasp_joints_1, self.grasp_joints_1, self.post_grasp_joints_1),
