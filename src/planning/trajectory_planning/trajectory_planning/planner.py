@@ -180,7 +180,9 @@ class PlannerNode(Node):
 
     def closestPointBlCb(self, msg: PointStamped):
         self.closest_point_bl = [msg.point.x, msg.point.y]
-        self.closest_point_bl_time = self.get_clock().now()
+        # cost_map_node stamps this with the time of the /gnss/odom pose it was
+        # computed from, so the age check below sees how old the bearing really is.
+        self.closest_point_bl_time = Time.from_msg(msg.header.stamp)
 
     def isPlantingCb(self, msg: Bool):
         if msg.data and not self.is_planting:
@@ -914,8 +916,8 @@ class PlannerNode(Node):
             self.publishStatus("Waiting for fresh obstacle data after planting", DiagnosticStatus.WARN)
             return
 
-        # The bearing comes from cost_map_node via TF. If it stops arriving, stop
-        # rather than keep turning on an old value.
+        # The bearing comes from cost_map_node, computed from /gnss/odom and stamped
+        # with that pose's time. If it's old, stop rather than keep turning on it.
         bearing_age = (self.get_clock().now() - self.closest_point_bl_time).nanoseconds * 1e-9
         if bearing_age > 0.5:
             self.publishStatus(f"Seedling bearing is {bearing_age:.1f}s old. Holding.",
@@ -999,14 +1001,17 @@ class PlannerNode(Node):
             self.publishStatus("Driving straight to acquire heading")
             return
 
-        # Point turn with hysteresis: start above 45 deg, stop below 20 deg. The
+        # Point turn with hysteresis: start above 45 deg, stop below 30 deg. The
         # direction is only held while the goal is roughly behind us (where the
         # sign of the error flips from cycle to cycle); otherwise turn the short
         # way, so a wrong first choice (e.g. from a stale bearing) corrects itself.
         # Near the goal, SBAS position noise swings the bearing a lot, so only
         # turn in place if the goal is clearly behind us.
         POINT_TURN_START = np.pi / 4
-        POINT_TURN_STOP = np.radians(20)
+        # The Warthog keeps turning ~0.4 s / ~15 deg (up to ~35) after the stop
+        # command (11-13 bags), so stopping at 30 deg lands near 10-15 deg and the
+        # drive steering below takes out the rest while moving.
+        POINT_TURN_STOP = np.radians(30)
         KEEP_DIRECTION_ABOVE = np.radians(135)
         NEAR_GOAL = 2.0  # m
         # The near-goal exception is for SBAS noise around the seedling; detour
@@ -1027,7 +1032,9 @@ class PlannerNode(Node):
             self.publishStatus(f"Turning {direction_string} toward {target}")
             # Slow down as the error shrinks so lag in the heading/bearing can't
             # carry us through the stop window.
-            omega = float(np.clip(abs(yaw_error), 0.4, 0.8))
+            # Capped at 0.5 rad/s (was 0.8): the coast after stopping and any
+            # bearing delay both scale with turn speed.
+            omega = float(np.clip(abs(yaw_error), 0.3, 0.5))
             # No forward creep while something is in the stop box (only possible mid-detour).
             self.pointTurnFromYawError(self.point_turn_direction, omega=omega,
                                        linear=0.0 if blocked else 0.2)

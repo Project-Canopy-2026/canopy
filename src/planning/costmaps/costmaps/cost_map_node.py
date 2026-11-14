@@ -35,6 +35,11 @@ class CostMapNode(Node):
             Empty, "/behavior/on_seedling_reached", self.onSeedlingReached, 1
         )
         self.create_subscription(PlantingPlan, "/planning/complete_plan", self.completePlanCb, 1)
+        # Robot pose straight from gnss_interface (the same position and heading
+        # that map->base_link is built from). Reading it through /tf left the
+        # bearing 1-5 s stale whenever /tf delivery backed up (11-13 bags), and
+        # the planner turned past the seedling on it.
+        self.create_subscription(Odometry, "/gnss/odom", self.gnssOdomCb, 1)
 
         self.seedling_dist_map_pub = self.create_publisher(
             OccupancyGrid, "/cost/dist_to_seedlings", 1
@@ -48,9 +53,6 @@ class CostMapNode(Node):
         )
         self.status_pub = self.create_publisher(DiagnosticStatus, "/diagnostics", 1)
 
-        self.tf_buffer = Buffer()
-        self.tf_listener = TransformListener(self.tf_buffer, self)
-
         self.create_timer(0.1, self.updateCosts)
 
         self.seedling_points = []
@@ -59,6 +61,14 @@ class CostMapNode(Node):
         self.cached_occ = np.zeros((100, 100))
         self.ego_pos = None
         self.ego_yaw = None
+        self.ego_stamp = None  # header stamp of the /gnss/odom the pose came from
+
+    def gnssOdomCb(self, msg: Odometry):
+        p = msg.pose.pose.position
+        q = msg.pose.pose.orientation
+        self.ego_pos = (p.x, p.y)
+        self.ego_yaw = R.from_quat([q.x, q.y, q.z, q.w]).as_euler("xyz")[2]
+        self.ego_stamp = msg.header.stamp
 
     def completePlanCb(self, msg: PlantingPlan):
         self.get_logger().info("Complete plan received")
@@ -103,20 +113,10 @@ class CostMapNode(Node):
             # )
             return np.ones((100, 100)) * 100
 
-        try:
-            bl_to_map_tf = self.tf_buffer.lookup_transform(
-                "map", "base_link", rclpy.time.Time()
+        if self.ego_pos is None or self.ego_yaw is None:
+            self.get_logger().warning(
+                "No /gnss/odom yet; robot position unknown.", throttle_duration_sec=2.0
             )
-            ego_x = bl_to_map_tf.transform.translation.x
-            ego_y = bl_to_map_tf.transform.translation.y
-            self.ego_pos = (ego_x, ego_y)
-
-            q = bl_to_map_tf.transform.rotation
-            r = R.from_quat([q.x, q.y, q.z, q.w])
-            self.ego_yaw = r.as_euler("xyz")[2]
-
-        except TransformException as ex:
-            self.get_logger().warning(f"Could not get ego position: {ex}")
             return np.ones((100, 100)) * 100
 
         # if self.ego_pos is None or self.ego_yaw is None:
@@ -164,7 +164,9 @@ class CostMapNode(Node):
         closest_seedling_bl = closest_seedling_bl[0]
 
         closest_point_msg = PointStamped()
-        closest_point_msg.header.stamp = self.get_clock().now().to_msg()
+        # Stamp with the time of the pose the bearing was computed from, so the
+        # planner can tell when it's old (it used to be now(), which hid staleness).
+        closest_point_msg.header.stamp = self.ego_stamp
         closest_point_msg.header.frame_id = "base_link"
         closest_point_msg.point.x = float(closest_seedling_bl[0])
         closest_point_msg.point.y = float(closest_seedling_bl[1])

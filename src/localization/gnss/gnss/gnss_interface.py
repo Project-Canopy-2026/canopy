@@ -7,7 +7,7 @@ import utm
 import math
 
 from nav_msgs.msg import Odometry
-from geometry_msgs.msg import TransformStamped
+from geometry_msgs.msg import TransformStamped, Twist
 from gps_msgs.msg import GPSFix
 from sensor_msgs.msg import Imu
 from std_msgs.msg import Bool, Float32
@@ -60,6 +60,11 @@ class gnss_interface(Node):
         self.create_subscription(
             Imu, self.get_parameter("imu_topic").value, self.imuCb, 50
         )
+        # What the planner is commanding. COG can't tell forward from reverse, so
+        # heading is only learned from it while we're commanding forward.
+        self.create_subscription(
+            Twist, self.get_parameter("cmd_vel_topic").value, self.cmdCb, 10
+        )
 
         lat0, lon0, alt0 = self.get_parameter("map_origin_lat_lon_alt_degrees").value
         self.origin_utm_x, self.origin_utm_y, self.origin_zone_num, self.origin_zone_letter = utm.from_latlon(lat0, lon0)
@@ -83,6 +88,24 @@ class gnss_interface(Node):
         self.last_imu_time = None
         self.last_imu_yaw = None     # yaw from the IMU's own orientation, used to bridge gaps
         self.t_map_base = None       # last GPS-derived base_link position
+        self.last_forward_cmd_time = None  # last time the planner commanded forward motion
+
+    def cmdCb(self, msg: Twist):
+        if msg.linear.x > 0.15:
+            self.last_forward_cmd_time = self.get_clock().now()
+
+    def commandedForward(self):
+        """True if the planner commanded forward motion in the last second.
+
+        Driving with the W200 remote doesn't show up here (it bypasses the
+        planner), which is the point: on 11-13 the heading was initialised while
+        the robot was being driven by hand, came out ~180 deg off, and the robot
+        then drove straight away from the seedling.
+        """
+        if self.last_forward_cmd_time is None:
+            return False
+        age = (self.get_clock().now() - self.last_forward_cmd_time).nanoseconds * 1e-9
+        return age < 1.0
 
     def imuCb(self, msg: Imu):
         t = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
@@ -158,7 +181,13 @@ class gnss_interface(Node):
         v_fwd = math.sqrt(max(msg.speed ** 2 - (d * w) ** 2, 1e-3))
         measured = wrap(track + math.atan2(d * w, v_fwd))
 
+        forward = self.commandedForward()
+
         if self.heading is None:
+            if not forward:
+                # Could be reversing (or driven by hand); COG would point backwards.
+                self.init_samples = []
+                return
             self.init_samples.append(measured)
             self.init_samples = self.init_samples[-self.INIT_SAMPLES:]
             if len(self.init_samples) == self.INIT_SAMPLES:
@@ -171,8 +200,11 @@ class gnss_interface(Node):
             return
 
         innovation = wrap(measured - self.heading)
-        if abs(innovation) > math.pi / 2:
-            return  # driving backwards; COG points the other way
+        if abs(innovation) > math.pi / 2 and not forward:
+            return  # may be driving backwards; COG points the other way
+        # While commanded forward, a >90 deg disagreement is not reversing: the
+        # heading is wrong (e.g. initialised while reversing). It counts towards
+        # re-initialising below instead of being ignored forever.
         if abs(innovation) < self.HEADING_GATE:
             self.heading = wrap(self.heading + self.HEADING_GAIN * innovation)
             self.rejected_in_a_row = 0
@@ -190,6 +222,27 @@ class gnss_interface(Node):
             return
         heading = self.heading if heading is None else heading
 
+        q_map_base = R.from_euler("z", heading)
+        q = q_map_base.as_quat()
+
+        # /gnss/odom and /gnss/yaw don't need TF, so publish them before the
+        # odom->base_link lookup. cost_map_node steers from /gnss/odom; it must
+        # keep flowing even when /tf delivery stalls.
+        if stamp is not None:
+            odom_msg = Odometry()
+            odom_msg.header.stamp = stamp
+            odom_msg.header.frame_id = self.map_frame
+            odom_msg.child_frame_id = self.base_frame
+            odom_msg.pose.pose.position.x = self.t_map_base[0]
+            odom_msg.pose.pose.position.y = self.t_map_base[1]
+            odom_msg.pose.pose.position.z = self.t_map_base[2]
+            odom_msg.pose.pose.orientation.x = q[0]
+            odom_msg.pose.pose.orientation.y = q[1]
+            odom_msg.pose.pose.orientation.z = q[2]
+            odom_msg.pose.pose.orientation.w = q[3]
+            self.odom_pub.publish(odom_msg)
+            self.yaw_pub.publish(Float32(data=float(heading)))
+
         try:
             odom_to_base = self.tf_buffer.lookup_transform(
                 self.odom_frame, self.base_frame, rclpy.time.Time()
@@ -198,7 +251,6 @@ class gnss_interface(Node):
             self.get_logger().warn(f"Could not lookup {self.odom_frame}->{self.base_frame}: {e}", throttle_duration_sec=2.0)
             return
 
-        q_map_base = R.from_euler("z", heading)
         t_odom_base = np.array([
             odom_to_base.transform.translation.x,
             odom_to_base.transform.translation.y,
@@ -216,22 +268,6 @@ class gnss_interface(Node):
         q_map_odom = q_map_base * q_odom_base.inv()
         t_map_odom = self.t_map_base - q_map_odom.apply(t_odom_base)
         q_map_odom_arr = q_map_odom.as_quat()
-        q = q_map_base.as_quat()
-
-        if stamp is not None:
-            odom_msg = Odometry()
-            odom_msg.header.stamp = stamp
-            odom_msg.header.frame_id = self.map_frame
-            odom_msg.child_frame_id = self.base_frame
-            odom_msg.pose.pose.position.x = self.t_map_base[0]
-            odom_msg.pose.pose.position.y = self.t_map_base[1]
-            odom_msg.pose.pose.position.z = self.t_map_base[2]
-            odom_msg.pose.pose.orientation.x = q[0]
-            odom_msg.pose.pose.orientation.y = q[1]
-            odom_msg.pose.pose.orientation.z = q[2]
-            odom_msg.pose.pose.orientation.w = q[3]
-            self.odom_pub.publish(odom_msg)
-            self.yaw_pub.publish(Float32(data=float(heading)))
 
         # Publish map -> odom TF, stamped with the Warthog's clock to match odom->base_link
         tf_msg = TransformStamped()
@@ -268,6 +304,7 @@ class gnss_interface(Node):
             [40.44132949798969, -79.94451105594635, 293.0],
         )
         self.declare_parameter("imu_topic", "/w200_0120/sensors/imu_0/data")
+        self.declare_parameter("cmd_vel_topic", "/w200_0120/cmd_vel")  # planner output
         # Effective distance of the antenna behind the robot's rotation centre,
         # fitted from the 9-15 and 9-24 bags (1.0-1.1 m).
         self.declare_parameter("cog_lever_arm_m", 1.0)
