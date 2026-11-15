@@ -1,5 +1,6 @@
 import rclpy
 from rclpy.node import Node, ParameterDescriptor, ParameterType
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from scipy.spatial.distance import pdist
 import utm
 
@@ -29,8 +30,16 @@ class PlanManager(Node):
         )
         #self.create_subscription(Odometry, "/odometry/gps", self.odomCb, 1)
 
+        # Latched: a late joiner (e.g. Foxglove after a Wi-Fi drop) gets the
+        # current remaining plan immediately instead of waiting for the next
+        # seedling. Volatile subscribers are still compatible and see no history.
+        latched_qos = QoSProfile(
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
         self.remaining_plan_pub = self.create_publisher(
-            PlantingPlan, "/planning/remaining_plan", 1
+            PlantingPlan, "/planning/remaining_plan", latched_qos
         )
         self.seedling_reached_pub = self.create_publisher(
             Empty, "/behavior/on_seedling_reached", 1

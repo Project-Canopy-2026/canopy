@@ -3,6 +3,7 @@ import threading
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Bool, Empty, String
 
 
@@ -144,7 +145,16 @@ class PlantingFsmNode(Node):
         # ── Publishers ────────────────────────────────────────────────────
         self._arduino_pub    = self.create_publisher(String, '/arduino_cmd',        10)
         self._linak_pub      = self.create_publisher(String, '/linak_cmd',          10)
-        self._state_pub      = self.create_publisher(String, 'planting_state',      10)
+        # Latched: state is only published on transitions, so a late joiner
+        # (e.g. Foxglove after a Wi-Fi drop) would otherwise not know the
+        # current state until the next one. Volatile subscribers are still
+        # compatible and see no history.
+        state_qos = QoSProfile(
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self._state_pub      = self.create_publisher(String, 'planting_state',      state_qos)
         self._chute_pos_pub  = self.create_publisher(Bool,   '/chute_in_position',  10)
 
         # ── Subscribers ───────────────────────────────────────────────────
