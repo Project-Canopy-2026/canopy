@@ -6,7 +6,7 @@
 const uint8_t DXL_ID = 1;
 const float OPEN_POS  = 170;
 // const float CLOSE_POS = 0; # fully close
-const float CLOSE_POS = 100; 
+const float CLOSE_POS = 90; 
 
 
 Dynamixel2Arduino dxl(DXL_BUS);

@@ -40,7 +40,7 @@ def generate_launch_description():
             # Box in base_link that covers the robot body/arm, so self-hits aren't obstacles.
             # DONE: set to the measured robot extent including the arm.
             "self_filter_min_x": -0.9,
-            "self_filter_max_x": 0.9,
+            "self_filter_max_x": 1.2,
             "self_filter_min_y": -0.8,
             "self_filter_max_y": 0.8,
         }],
