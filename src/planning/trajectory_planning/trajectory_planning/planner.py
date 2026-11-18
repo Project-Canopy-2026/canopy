@@ -129,9 +129,15 @@ class PlannerNode(Node):
         self.occ_stamp = None  # header stamp of the latest grid
 
         # The lidar pipeline is stopped while planting, so after planting the last grid
-        # is stale. Don't drive until a grid stamped after planting ended arrives.
+        # is stale. Right after the pipeline restarts, grids can also arrive in bursts.
+        # Don't drive until a steady run of grids stamped after `fresh_since` arrives
+        # (parameters fresh_grids_required / fresh_grid_max_gap). A stale-data hold
+        # re-arms the same gate, so a bursty stream gives one hold, not stop/go.
         self.awaiting_fresh_occ = False
-        self.planting_end_time = None
+        self.fresh_since = None       # only grids stamped after this count
+        self.fresh_reason = ""        # why we're waiting, for status/log
+        self.steady_grids = 0         # consecutive fresh grids, each < max gap apart
+        self.last_fresh_occ_stamp = None
 
         # Obstacle stop box, in base_link meters
         self.STOP_BOX_MIN_X = 1.0  # starts past the occupancy node's self-filter
@@ -188,9 +194,16 @@ class PlannerNode(Node):
         if msg.data and not self.is_planting:
             self.clearDetour()  # seedling reached; any detour belonged to it
         if self.is_planting and not msg.data:
-            self.awaiting_fresh_occ = True
-            self.planting_end_time = self.get_clock().now()
+            self.awaitSteadyOcc("after planting")
         self.is_planting = msg.data
+
+    def awaitSteadyOcc(self, reason: str):
+        """Hold until a steady run of grids stamped from now on arrives (see occCb)."""
+        self.awaiting_fresh_occ = True
+        self.fresh_since = self.get_clock().now()
+        self.fresh_reason = reason
+        self.steady_grids = 0
+        self.last_fresh_occ_stamp = None
 
     def isTurningDownhillCb(self, msg: Bool):
         self.is_turning_downhill = msg.data
@@ -241,10 +254,24 @@ class PlannerNode(Node):
         self.occ_info = msg.info
         self.occ_stamp = Time.from_msg(msg.header.stamp)
 
-        if self.awaiting_fresh_occ and Time.from_msg(msg.header.stamp) > self.planting_end_time:
+        if not self.awaiting_fresh_occ or self.occ_stamp <= self.fresh_since:
+            return
+
+        # Count consecutive fresh grids by their stamps (occupancy_grid_node stamps each
+        # grid when it publishes it), so planner callback delays don't affect the gaps.
+        # Read the parameters here so `ros2 param set` takes effect without a restart.
+        required = max(1, int(self.get_parameter("fresh_grids_required").value))
+        max_gap = float(self.get_parameter("fresh_grid_max_gap").value)
+        gap = None if self.last_fresh_occ_stamp is None else \
+            (self.occ_stamp - self.last_fresh_occ_stamp).nanoseconds * 1e-9
+        self.steady_grids = self.steady_grids + 1 if (gap is not None and gap < max_gap) else 1
+        self.last_fresh_occ_stamp = self.occ_stamp
+
+        if self.steady_grids >= required:
             self.awaiting_fresh_occ = False
-            waited = (self.get_clock().now() - self.planting_end_time).nanoseconds / 1e9
-            self.get_logger().info(f"Fresh obstacle data {waited:.1f} s after planting; resuming")
+            waited = (self.get_clock().now() - self.fresh_since).nanoseconds / 1e9
+            self.get_logger().info(
+                f"Steady obstacle data ({required} grids) {waited:.1f} s {self.fresh_reason}; resuming")
 
     def isObstacleAhead(self, max_x=None) -> bool:
         """True if enough occupied cells sit in a box directly ahead of the robot.
@@ -913,7 +940,8 @@ class PlannerNode(Node):
 
         if self.awaiting_fresh_occ:
             self.twist_pub.publish(self.getSmoothed(Twist()))
-            self.publishStatus("Waiting for fresh obstacle data after planting", DiagnosticStatus.WARN)
+            self.publishStatus(f"Waiting for steady obstacle data {self.fresh_reason} "
+                               f"({self.steady_grids} grids so far)", DiagnosticStatus.WARN)
             return
 
         # The bearing comes from cost_map_node, computed from /gnss/odom and stamped
@@ -931,6 +959,10 @@ class PlannerNode(Node):
             self.publishStatus("Obstacle data missing" if occ_age is None else
                             f"Obstacle data {occ_age:.1f} s old. Holding.", DiagnosticStatus.WARN)
             self.twist_pub.publish(self.getSmoothed(Twist()))
+            # Don't resume on the next single grid: wait for a steady run again.
+            reason = "at startup" if occ_age is None else f"after a {occ_age:.1f} s gap"
+            self.get_logger().warn(f"Obstacle data stale; waiting for steady obstacle data {reason}")
+            self.awaitSteadyOcc(reason)
             return
 
         # Obstacle handling: stop, plan a detour once, then follow its waypoints
@@ -1230,6 +1262,11 @@ class PlannerNode(Node):
             "map_origin_lat_lon_alt_degrees",
             [40.44132949798969, -79.94451105594635, 293.0],
         )
+        # Steady-stream gate before driving after planting or a stale-data hold.
+        # Normal grid rate is 10 Hz; ~4 Hz on a loaded Jetson. 1 = old behaviour
+        # (resume on the first fresh grid).
+        self.declare_parameter("fresh_grids_required", 5)
+        self.declare_parameter("fresh_grid_max_gap", 0.7)  # s between consecutive grids
 # [40.4431653, -79.9402844, 288.0961589] # steward
         #lat0, lon0, _ = self.get_parameter("map_origin_lat_lon_alt_degrees").value
         #self._map_origin_utm_x, self._map_origin_utm_y, _, __ = utm.from_latlon(lat0, lon0)
