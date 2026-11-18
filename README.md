@@ -200,3 +200,17 @@ ssh teamj@100.100.137.36
 tmux new -s test            # reattach later with: tmux attach -t test
 ~/dev/ros2_ws/src/canopy/scripts/pretest.sh
 ```
+
+
+#  Record a ROS2 bag for debugging
+```bash
+ros2 bag record -s mcap \
+  -o ~/dev/bags/relaunch-jitter-$(date +%m-%d-%H%M) \
+  /diagnostics \
+  /cost/occupancy \
+  /nonground \
+  /velodyne_packets \
+  /behavior/is_planting \
+  /w200_0120/cmd_vel \
+  /tf_static
+```

@@ -98,7 +98,7 @@ def generate_launch_description():
         name="velodyne_convert",
         output="screen",
         parameters=[{
-            "calibration": "/opt/ros/humble/share/velodyne_pointcloud/params/VLP16_hires_db.yaml",
+            "calibration": "/opt/ros/humble/share/velodyne_pointcloud/params/VLP16db.yaml",
             "min_range": 0.1, # allowed 0.1 to 10
             "max_range": 100.0, # allowed 0.1 to 200
             "organize_cloud": False,
@@ -113,7 +113,7 @@ def generate_launch_description():
         parameters=[
             {"cloud_topic": lidar_cloud_topic},
             {"frame_id": lidar_cloud_frame},
-            {"sensor_height": 1.365},    # lidar height above ground (not above base_link)
+            {"sensor_height": 1.353},    # lidar height above ground (not above base_link)
             {"num_iter": 3},
             {"num_lpr": 20},
             {"num_min_pts": 0},
@@ -127,8 +127,8 @@ def generate_launch_description():
             {"min_range": 1.0},
             {"uprightness_thr": 0.707},
             # Cloud is de-rotated into a level frame before segmentation. +ve pitch = tilted down.
-            {"lidar_roll_deg": 0.69},
-            {"lidar_pitch_deg": 24.85},
+            {"lidar_roll_deg": 1.07},
+            {"lidar_pitch_deg": 19.26},
             {"verbose": False},
             {"display_time": False},
         ],
