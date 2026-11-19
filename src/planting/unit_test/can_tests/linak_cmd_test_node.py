@@ -12,6 +12,7 @@ Command syntax
   <1|2> home                    →  LINAK,<id>,HOME   (retract to the end stop)
   <1|2> down  <cm> [fast|slow]  →  LINAK,<id>,DOWN,<cm>[,FAST|SLOW]
   <1|2> up    <cm> [fast|slow]  →  LINAK,<id>,UP,<cm>[,FAST|SLOW]
+  <1|2> dig   <cm> [fast|slow]  →  LINAK,<id>,DIG,<cm>[,FAST|SLOW]
   <1|2> stop                    →  LINAK,<id>,STOP
   q                             →  quit
 
@@ -21,6 +22,18 @@ Everything is in CENTIMETRES, never seconds.
 whether it was at 2 cm or 25 cm. `down`/`up` are relative jogs from wherever the
 arm is now — handy for nudging, but `goto` is what the FSM uses and what you
 want when you care where it ends up. Targets are clamped to the 30 cm stroke.
+
+`dig` is the one to use while a move is ALREADY running: it re-aims that move
+to <cm> past the current position without stopping the actuator, which is how
+planting_fsm turns "reach for the ground" into "now go 10 cm below it" the
+moment the FSR reports contact. Sent while nothing is moving it degrades to a
+plain `down`, so the way to see what it really does is:
+
+    1 goto 25 slow        # start a long slow move
+    1 dig 5               # a second or two later — watch for a pause
+
+If the travel is continuous and /linak_status reports a single DONE carrying
+~5.00 cm (not the whole stroke), the retarget worked.
 
 Omitting the speed tag gets SLOW (1.09 cm/s), the driver's default; FAST is
 2.18 cm/s. Actuator 1 is the auger, 2 is the chute.
@@ -39,7 +52,7 @@ from std_msgs.msg import String
 
 _USAGE = (
     "Commands:  <1|2> goto <cm> [fast|slow]  |  <1|2> home  |"
-    "  <1|2> down|up <cm> [fast|slow]  |  <1|2> stop  |  q"
+    "  <1|2> down|up|dig <cm> [fast|slow]  |  <1|2> stop  |  q"
 )
 
 
@@ -95,7 +108,7 @@ def _input_loop(node: LinakTestNode) -> None:
         elif len(parts) == 2 and parts[1] in ("home", "in_max"):
             node.send(f"LINAK,{actuator},HOME")
 
-        elif len(parts) in (3, 4) and parts[1] in ("goto", "down", "up"):
+        elif len(parts) in (3, 4) and parts[1] in ("goto", "down", "up", "dig"):
             try:
                 value_cm = float(parts[2])
             except ValueError:

@@ -24,6 +24,16 @@ command can aim past the hard stop and sit grinding against it.
       The FSM does not use them: a relative command is only as good as your
       belief about where the arm currently is, which is exactly the assumption
       that turned a short home into a false obstacle abort.
+  LINAK,<id>,DIG,<depth_cm>[,FAST|SLOW]      — retarget the move ALREADY
+      running to depth_cm past the current position, WITHOUT stopping. The
+      actuator servos to its last setpoint, so writing a new one just moves
+      the destination; the motor never pauses. Travel is re-zeroed at the
+      moment of the retarget, so the DONE reply reports depth_cm, not the
+      whole stroke. planting_fsm.py sends this the instant the FSR reports
+      ground contact: depth is then measured from the soil surface instead
+      of from home, which is what makes a hole the same depth facing uphill
+      and facing downhill. With no move running it degrades to a plain
+      relative DOWN.
   LINAK,<id>,STOP               — stop immediately
 
 Speed tag on GOTO/DOWN/UP: FAST = 2.18 cm/s (0xCD), SLOW = 1.09 cm/s (0x64).
@@ -491,6 +501,15 @@ class ActuatorChannel:
         self._live_pos:  Optional[int] = None
         self._travel_lock = threading.Lock()
 
+        # Destination of the move in flight, held outside _worker_move so
+        # retarget() can change it without touching the thread. _target_origin
+        # is where the actuator was when that target was set — it is what
+        # decides whether arrival means "at or past" or "at or before", so a
+        # retarget that reverses direction is still judged correctly.
+        self._target:        Optional[int] = None
+        self._target_origin: Optional[int] = None
+        self._target_lock = threading.Lock()
+
     # ── Startup ───────────────────────────────────────────────────────────
     #
     # Startup logs are INFO, not DEBUG. The launch default verbosity is INFO,
@@ -800,6 +819,58 @@ class ActuatorChannel:
                 self._live_pos = pos
         return self.travelled_cm()
 
+    def retarget(
+        self,
+        new_target_pos: int,
+        speed:          int  = SPEED_DEFAULT,
+        reset_origin:   bool = False,
+    ) -> bool:
+        """
+        Change where the move already running is heading, without stopping it.
+
+        The actuator servos to whatever position setpoint it last received, so
+        writing a new one simply moves the destination. The motor does not
+        stop, the worker thread is not restarted, and no extra DONE/STALL is
+        reported — it is still the same move, now ending somewhere else.
+
+        start_move() cannot do this. It calls _abort(), and the worker's
+        cancel path runs _safe_stop(), which sends CMD_STOP. The actuator
+        halts and then has to accelerate again, which shows up as a visible
+        hitch in the travel and a brief loss of auger feed rate.
+
+        reset_origin makes travelled_cm() count from the position at the
+        moment of the retarget instead of from where the move began, so a
+        drill that re-aims on ground contact reports the depth of the hole
+        rather than the length of the whole stroke.
+
+        Returns False if there is no move to retarget, leaving the caller to
+        issue a normal move instead.
+        """
+        if self._move_thread is None or not self._move_thread.is_alive():
+            return False
+
+        pos = self.get_position()
+        if pos is None:
+            self._log.warn(
+                f"[LINAK{self.linak_id}] retarget ignored — no position feedback"
+            )
+            return False
+
+        with self._target_lock:
+            self._target        = new_target_pos
+            self._target_origin = pos
+        if reset_origin:
+            with self._travel_lock:
+                self._start_pos = pos
+
+        # New setpoint, same move, no CMD_STOP. That omission IS the feature.
+        self._send(new_target_pos, speed)
+        self._log.debug(
+            f"[LINAK{self.linak_id}] retarget: {pos} → {new_target_pos} "
+            f"({abs(new_target_pos - pos) / COUNTS_PER_CM:.2f} cm to go)"
+        )
+        return True
+
     # ── Internals ─────────────────────────────────────────────────────────
 
     def _send(self, code: int, speed: int = SPEED_DEFAULT) -> None:
@@ -862,12 +933,13 @@ class ActuatorChannel:
 
             # Direction is implied by the setpoint, not commanded: whether this
             # is an extend or a retract is just which side of the target we
-            # happen to be on.
+            # happen to be on. Both are published rather than captured, and
+            # re-read every poll, because retarget() may move the destination
+            # (and with it the direction) while this move is in flight.
+            with self._target_lock:
+                self._target        = target_pos
+                self._target_origin = start_pos
             target = target_pos
-            if target >= start_pos:
-                reached = lambda p: p >= target - _TARGET_TOLERANCE
-            else:
-                reached = lambda p: p <= target + _TARGET_TOLERANCE
 
             self._log.debug(
                 f"[LINAK{self.linak_id}] move: {start_pos} → {target} "
@@ -894,7 +966,15 @@ class ActuatorChannel:
                 with self._travel_lock:
                     self._live_pos = pos
 
-                if reached(pos):
+                # Re-read: a retarget() since the last poll moves the goal.
+                with self._target_lock:
+                    target = self._target
+                    origin = self._target_origin
+                reached = (pos >= target - _TARGET_TOLERANCE
+                           if target >= origin
+                           else pos <= target + _TARGET_TOLERANCE)
+
+                if reached:
                     self._send(CMD_STOP)
                     travelled = self.travelled_cm()
                     self._log.debug(
@@ -924,7 +1004,7 @@ class ActuatorChannel:
                             f"[LINAK{self.linak_id}] stalled at {pos} before "
                             f"reaching target {target} — travelled "
                             f"{travelled:.2f} of "
-                            f"{abs(target - start_pos) / COUNTS_PER_CM:.2f} cm"
+                            f"{abs(target - origin) / COUNTS_PER_CM:.2f} cm"
                         )
                         on_result("STALL", travelled)
                     return
@@ -1263,7 +1343,7 @@ class LinakDriver(Node):
         action = parts[2].upper()
 
         # ── Moves ─────────────────────────────────────────────────────────
-        if action in ("GOTO", "HOME", "IN_MAX", "DOWN", "UP"):
+        if action in ("GOTO", "HOME", "IN_MAX", "DOWN", "UP", "DIG"):
             if action in ("HOME", "IN_MAX"):
                 # Full retraction onto the hard stop. Reaching the stop is the
                 # point, so a stall here IS success.
@@ -1320,7 +1400,9 @@ class LinakDriver(Node):
                             f"compute a relative {action}. Use GOTO or HOME."
                         )
                         return
-                    target_pos = here + counts if action == "DOWN" else here - counts
+                    target_pos = (here + counts
+                                  if action in ("DOWN", "DIG")
+                                  else here - counts)
 
             # One clamp for every path. This is what stops a too-deep command
             # from parking against the hard stop until stall detection reports
@@ -1340,6 +1422,18 @@ class LinakDriver(Node):
                 f"speed=0x{speed:02X})"
             )
             self._publish_status(f"ACK:LINAK{lid}")
+
+            if action == "DIG" and ch.retarget(
+                new_target_pos = target_pos,
+                speed          = speed,
+                reset_origin   = True,
+            ):
+                # Retargeted in flight. The move already running owns the
+                # completion report, so there is nothing more to do here — the
+                # DONE it eventually sends carries the distance travelled since
+                # this retarget, which is the depth of the hole.
+                return
+
             ch.start_move(
                 target_pos    = target_pos,
                 on_result     = lambda outcome, cm, detail="", lid=lid: (
@@ -1360,7 +1454,7 @@ class LinakDriver(Node):
         else:
             self.get_logger().error(
                 f"Unknown action '{action}'. "
-                f"Valid: GOTO, HOME, DOWN, UP, STOP"
+                f"Valid: GOTO, HOME, DOWN, UP, DIG, STOP"
             )
 
 

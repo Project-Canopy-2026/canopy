@@ -51,7 +51,15 @@ _PARAM_TYPES = {
     'fsr_abort_voltage':    float,
     'fsr_poll_hz':          float,
     'fsr_abort_seconds':    float,
+    'fsr_contact_voltage':  float,
+    'fsr_contact_samples':  int,
+    'hole_depth_cm':        float,
 }
+
+# How far short of the commanded depth still counts as having dug the hole.
+# linak_can_node calls a move DONE within _TARGET_TOLERANCE (50 counts, 0.5 cm),
+# so this has to be looser than that to avoid crying wolf on every hole.
+_DEPTH_TOLERANCE_CM = 1.0
 
 
 def _parse_linak_status(token: str):
@@ -127,6 +135,19 @@ class PlantingFsmNode(Node):
         self.declare_parameter('fsr_abort_voltage',    3.6)
         self.declare_parameter('fsr_poll_hz',          10.0)
         self.declare_parameter('fsr_abort_seconds',    1.0)
+        # Ground contact — the gentle trip, two orders below the abort one.
+        # Baseline in air is ~0.01 V with ~0.013 V of noise (12 runs,
+        # unit_test/fsr/data_InitialFSRFieldTest), so 0.15 V is roughly ten
+        # times the noise and still well under the lightest real contact.
+        # Detected contact time moved <0.1 s across 0.10–0.50 V on that data,
+        # so the exact value is not delicate — but do not raise it much: at
+        # 0.20 V run 6 (uphill, out of stroke) stopped registering at all, and
+        # that is precisely the case worth catching.
+        self.declare_parameter('fsr_contact_voltage',  0.15)
+        self.declare_parameter('fsr_contact_samples',  3)
+        # Depth of the hole BELOW the soil surface. Not a position: the drill
+        # travels this far past wherever it met the ground.
+        self.declare_parameter('hole_depth_cm',        10.0)
 
         # ── INDOOR PARAMS ────────────────────────────────────────────────────
         # self.declare_parameter('drilling_distance_cm', 5.0)        
@@ -139,6 +160,9 @@ class PlantingFsmNode(Node):
         # self.declare_parameter('fsr_abort_voltage',    3.5)
         # self.declare_parameter('fsr_poll_hz',          10.0)
         # self.declare_parameter('fsr_abort_seconds',    1.0)
+        # self.declare_parameter('fsr_contact_voltage',  0.15)
+        # self.declare_parameter('fsr_contact_samples',  3)
+        # self.declare_parameter('hole_depth_cm',        5.0)
 
         self._cast_params()         # mistyped defaults get cast, with a warning
 
@@ -171,7 +195,9 @@ class PlantingFsmNode(Node):
         # FSR polling gets its own timer slot — _enter() blindly cancels
         # _dwell_timer, which is already shared by the homing and dwell timers.
         self._fsr_timer   = None
-        self._fsr_over    = 0       # consecutive samples over threshold
+        self._fsr_over    = 0       # consecutive samples over abort threshold
+        self._fsr_contact = 0       # consecutive samples over contact threshold
+        self._contact_latched = False   # ground found: re-aim fires once a dig
 
         self.get_logger().info('planting_fsm ready — waiting for do_planting.')
 
@@ -322,6 +348,7 @@ class PlantingFsmNode(Node):
                 )
                 self._enter(State.DIGGING_OBSTACLE)
             elif outcome == 'DONE':
+                self._report_hole_depth(travelled)
                 self._enter(State.DRILLING_DWELL)
 
         elif state == State.AUGER_RETRACT and outcome in ('DONE', 'STALL'):
@@ -400,6 +427,9 @@ class PlantingFsmNode(Node):
             self.get_logger().warn(f'Malformed FSR reply: {token}')
             return
 
+        # Before the abort test, which returns early on a quiet sample.
+        self._check_ground_contact(voltage)
+
         threshold = self._params['fsr_abort_voltage']
         seconds   = self._params['fsr_abort_seconds']
         hz        = self._params['fsr_poll_hz']
@@ -431,6 +461,76 @@ class PlantingFsmNode(Node):
         )
         self._enter(State.DIGGING_OBSTACLE)
 
+    def _check_ground_contact(self, voltage: float):
+        """
+        First sustained force of the descent = the auger has reached soil.
+
+        Depth is then measured from there instead of from the actuator's home,
+        which is what makes a hole the same depth on any slope. The planting
+        mechanism hangs off the front of the robot, so pitch changes how high
+        it sits above the dirt: in the 10/26 field test the same commanded
+        extension dug ~2.5 cm deeper facing downhill than facing uphill, and
+        two uphill runs ran out of stroke at the surface having dug nothing.
+        Finding the ground first removes that term completely — no slope model,
+        no per-terrain calibration.
+
+        DIG retargets the descent already in flight rather than replacing it,
+        so the auger does not stop and restart at the moment it is biting in.
+        Latched, so this fires once per hole: by DRILLING_DWELL the auger is
+        loaded and every sample would otherwise trip it.
+        """
+        with self._lock:
+            if self._state != State.DRILLING_DOWN or self._contact_latched:
+                return
+            if voltage < self._params['fsr_contact_voltage']:
+                self._fsr_contact = 0
+                return
+            self._fsr_contact += 1
+            # A single sample is not enough: run 10 of the field data has a
+            # stray 0.05 V blip ~13 s before real contact.
+            if self._fsr_contact < self._params['fsr_contact_samples']:
+                return
+            self._contact_latched = True
+
+        depth = self._params['hole_depth_cm']
+        self.get_logger().info(
+            f'Ground contact at {voltage:.3f} V — digging {depth:.1f} cm below '
+            f'the surface.'
+        )
+        self._linak(f'LINAK,1,DIG,{depth:.2f},SLOW')
+        # still advances on DONE:LINAK1 — it is the same move, re-aimed
+
+    def _report_hole_depth(self, travelled: float):
+        """
+        Say how deep the hole actually came out, and warn when it is short.
+
+        After a DIG the driver re-zeroes its travel counter at the contact
+        point, so `travelled` IS the depth below the surface. Two ways it can
+        come up short, both of which otherwise plant shallow in silence:
+        the actuator ran out of stroke (the driver clamps the target to
+        POS_MAX, logs its own warning, and still reports DONE), or the soil
+        stopped it just inside the stall tolerance.
+        """
+        with self._lock:
+            latched = self._contact_latched
+        if not latched:
+            self.get_logger().warn(
+                'Drill ran its whole approach without ever touching ground — '
+                'no hole dug. The mechanism is too high for this ground, or '
+                'there is nothing under the auger.'
+            )
+            return
+
+        want = self._params['hole_depth_cm']
+        if travelled < want - _DEPTH_TOLERANCE_CM:
+            self.get_logger().warn(
+                f'Hole is {travelled:.2f} cm, wanted {want:.2f} cm — '
+                f'{want - travelled:.2f} cm short. Out of stroke (lower the '
+                f'mechanism) or the soil stopped the auger.'
+            )
+        else:
+            self.get_logger().info(f'Hole depth {travelled:.2f} cm.')
+
     def _on_enter(self, state: State):
         # LINAK moves are now distance-based (cm). linak_can_node computes the
         # target count from TPDO feedback and stops there. The FAST/SLOW tag
@@ -455,6 +555,15 @@ class PlantingFsmNode(Node):
             # absolute depth from home, so a homing that finished short makes
             # the hole shallower — it cannot aim past the end stop and stall
             # there, which the driver would have reported as a rock.
+            #
+            # This move is now a SEARCH for the ground, not the dig itself:
+            # drilling_distance_cm only has to be deep enough to reach soil on
+            # the worst slope. _check_ground_contact() retargets it to
+            # hole_depth_cm past the surface the moment the FSR reports
+            # contact, and the hole is what happens after that.
+            with self._lock:
+                self._contact_latched = False
+                self._fsr_contact     = 0
             depth = self._params['drilling_distance_cm']
             self._linak(f'LINAK,1,GOTO,{depth:.2f},SLOW')
             # advances on DONE:LINAK1
