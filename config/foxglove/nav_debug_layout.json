@@ -13,15 +13,30 @@
     "3D!nav3d": {
       "followTf": "base_link",
       "followMode": "follow-position",
-      "scene": { "backgroundColor": "#1e1e1e" },
+      "scene": {
+        "backgroundColor": "#1e1e1e"
+      },
       "cameraState": {
         "perspective": false,
         "distance": 40,
         "phi": 0,
         "thetaOffset": 90,
-        "target": [0, 0, 0],
-        "targetOffset": [0, 0, 0],
-        "targetOrientation": [0, 0, 0, 1],
+        "target": [
+          0,
+          0,
+          0
+        ],
+        "targetOffset": [
+          0,
+          0,
+          0
+        ],
+        "targetOrientation": [
+          0,
+          0,
+          0,
+          1
+        ],
         "fovy": 45,
         "near": 0.5,
         "far": 5000
@@ -35,34 +50,115 @@
           "divisions": 200,
           "lineWidth": 0.5,
           "color": "#505050",
-          "position": [0, 0, 0],
-          "rotation": [0, 0, 0],
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ],
           "order": 1
         }
       },
       "transforms": {},
       "topics": {
-        "/cost/total": { "visible": true, "colorMode": "costmap", "alpha": 0.6 },
-        "/cost/occupancy": { "visible": false, "colorMode": "map", "alpha": 0.5 },
-        "/cost/dist_to_seedlings": { "visible": false, "colorMode": "costmap", "alpha": 0.6 },
-        "/nonground": { "visible": true, "colorMode": "flat", "flatColor": "#ff3232", "pointSize": 3 },
-        "/vis/candidates": { "visible": true },
-        "/cmd_vel/path": { "visible": true, "lineWidth": 0.12, "gradient": ["#00ffff", "#00ffff"] },
-        "/vis/seedlings": { "visible": true },
-        "/vis/robot": { "visible": true },
-        "/vis/robot_trail": { "visible": true, "lineWidth": 0.08, "gradient": ["#3366ff", "#3366ff"] },
-        "/vis/global_path": { "visible": true, "lineWidth": 0.1, "gradient": ["#ff8c00", "#ff8c00"] },
-        "/gnss/odom": { "visible": true },
-        "/planning/closest_seedling_bl": { "visible": true },
-        "/vis/route": { "visible": false },
-        "/vis/forest_plan": { "visible": false }
+        "/cost/total": {
+          "visible": true,
+          "colorMode": "costmap",
+          "alpha": 0.6
+        },
+        "/cost/occupancy": {
+          "visible": false,
+          "colorMode": "map",
+          "alpha": 0.5
+        },
+        "/cost/dist_to_seedlings": {
+          "visible": false,
+          "colorMode": "costmap",
+          "alpha": 0.6
+        },
+        "/nonground": {
+          "visible": true,
+          "colorMode": "flat",
+          "flatColor": "#ff3232",
+          "pointSize": 3
+        },
+        "/vis/candidates": {
+          "visible": true
+        },
+        "/cmd_vel/path": {
+          "visible": true,
+          "lineWidth": 0.12,
+          "gradient": [
+            "#00ffff",
+            "#00ffff"
+          ]
+        },
+        "/vis/seedlings": {
+          "visible": true
+        },
+        "/vis/robot": {
+          "visible": true
+        },
+        "/vis/robot_trail": {
+          "visible": true,
+          "lineWidth": 0.08,
+          "gradient": [
+            "#3366ff",
+            "#3366ff"
+          ]
+        },
+        "/vis/global_path": {
+          "visible": true,
+          "lineWidth": 0.1,
+          "gradient": [
+            "#ff8c00",
+            "#ff8c00"
+          ]
+        },
+        "/gnss/odom": {
+          "visible": true
+        },
+        "/planning/closest_seedling_bl": {
+          "visible": true
+        },
+        "/vis/route": {
+          "visible": false
+        },
+        "/vis/forest_plan": {
+          "visible": false
+        },
+        "/vis/obstacle_debug": {
+          "visible": true
+        },
+        "/planning/detour_path": {
+          "visible": true,
+          "lineWidth": 0.12,
+          "gradient": [
+            "#3b82f6",
+            "#3b82f6"
+          ]
+        }
       }
     },
     "Plot!navplot": {
       "title": "Heading / distance",
       "paths": [
-        { "value": "/gnss/yaw.data", "enabled": true, "timestampMethod": "receiveTime", "label": "GPS yaw (rad, ENU)" },
-        { "value": "/planning/distance_to_seedling.data", "enabled": true, "timestampMethod": "receiveTime", "label": "distance to target (m)" }
+        {
+          "value": "/gnss/yaw.data",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "GPS yaw (rad, ENU)"
+        },
+        {
+          "value": "/planning/distance_to_seedling.data",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "distance to target (m)"
+        }
       ],
       "showLegend": true,
       "isSynced": true,
@@ -70,17 +166,115 @@
       "followingViewWidth": 60
     },
     "RawMessages!navdiag": {
-      "topicPath": "/diagnostics",
+      "topicPath": "/diagnostics{name==\"trajectory_planner\"}.message",
       "diffEnabled": false,
       "diffMethod": "custom",
       "diffTopicPath": "",
       "showFullMessageForDiff": false,
-      "expansion": "all"
+      "expansion": "all",
+      "foxglovePanelTitle": "Planner status"
+    },
+    "Indicator!obstacle_state": {
+      "path": "/planning/obstacle_debug.state",
+      "style": "background",
+      "fallbackColor": "#6b7280",
+      "fallbackLabel": "NO DATA",
+      "rules": [
+        {
+          "operator": "=",
+          "rawValue": "CLEAR",
+          "color": "#22c55e",
+          "label": "CLEAR"
+        },
+        {
+          "operator": "=",
+          "rawValue": "OBSTACLE DETECTED",
+          "color": "#facc15",
+          "label": "OBSTACLE DETECTED"
+        },
+        {
+          "operator": "=",
+          "rawValue": "CHECKING STATIC OR DYNAMIC",
+          "color": "#f59e0b",
+          "label": "CHECKING STATIC OR DYNAMIC"
+        },
+        {
+          "operator": "=",
+          "rawValue": "DETOURING",
+          "color": "#3b82f6",
+          "label": "DETOURING"
+        },
+        {
+          "operator": "=",
+          "rawValue": "NO PATH",
+          "color": "#ef4444",
+          "label": "NO PATH"
+        }
+      ],
+      "foxglovePanelTitle": "Obstacle avoidance",
+      "fontSize": 28
+    },
+    "RawMessages!obstacle_detail": {
+      "topicPath": "/planning/obstacle_debug.detail",
+      "diffEnabled": false,
+      "diffMethod": "custom",
+      "diffTopicPath": "",
+      "showFullMessageForDiff": false,
+      "fontSize": 22,
+      "foxglovePanelTitle": "Obstacle detail"
+    },
+    "Plot!obstacle_plot": {
+      "title": "Obstacle check",
+      "paths": [
+        {
+          "value": "/planning/obstacle_debug.wait_elapsed",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "waited (s)"
+        },
+        {
+          "value": "/planning/obstacle_debug.wait_required",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "wait required (s)"
+        },
+        {
+          "value": "/planning/obstacle_debug.clear_scans",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "clear scans"
+        },
+        {
+          "value": "/planning/obstacle_debug.stop_box_cells",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "cells in stop box"
+        },
+        {
+          "value": "/planning/obstacle_debug.stop_box_cells_required",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "cells to block"
+        },
+        {
+          "value": "/planning/obstacle_debug.grid_age",
+          "enabled": false,
+          "timestampMethod": "receiveTime",
+          "label": "grid age (s)"
+        }
+      ],
+      "showLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "followingViewWidth": 30,
+      "foxglovePanelTitle": "Obstacle check"
     }
   },
   "globalVariables": {},
   "userNodes": {},
-  "playbackConfig": { "speed": 1 },
+  "playbackConfig": {
+    "speed": 1
+  },
   "layout": {
     "direction": "row",
     "first": {
@@ -92,8 +286,23 @@
     "second": {
       "direction": "column",
       "first": "3D!nav3d",
-      "second": "RawMessages!navdiag",
-      "splitPercentage": 75
+      "second": {
+        "direction": "row",
+        "first": {
+          "direction": "column",
+          "first": "Indicator!obstacle_state",
+          "second": {
+            "direction": "column",
+            "first": "RawMessages!obstacle_detail",
+            "second": "RawMessages!navdiag",
+            "splitPercentage": 50
+          },
+          "splitPercentage": 45
+        },
+        "second": "Plot!obstacle_plot",
+        "splitPercentage": 45
+      },
+      "splitPercentage": 62
     },
     "splitPercentage": 45
   }

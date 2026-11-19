@@ -14,7 +14,7 @@ import math
 from scipy.spatial.transform.rotation import Rotation as R
 from scipy import stats
 from skimage.draw import disk
-from scipy.ndimage import distance_transform_edt
+from scipy.ndimage import distance_transform_edt, label
 from skimage.graph import route_through_array
 
 # ROS2 message definitions
@@ -22,13 +22,16 @@ from skimage.graph import route_through_array
 # https://docs.ros.org/en/melodic/api/robot_localization/html/state_estimation_nodes.html
 from diagnostic_msgs.msg import DiagnosticStatus
 from geographic_msgs.msg import GeoPoint
-from geometry_msgs.msg import Twist, PoseStamped, PointStamped
+from geometry_msgs.msg import Twist, PoseStamped, PointStamped, Point
 from nav_msgs.msg import OccupancyGrid, Path, Odometry
+from std_msgs.msg import ColorRGBA
+from visualization_msgs.msg import Marker, MarkerArray
 from canopy_msgs.msg import (
     TrajectoryCandidates,
     TrajectoryCandidate,
     Mode,
     PlantingPlan,
+    ObstacleDebug,
 )
 from sensor_msgs.msg import PointCloud2
 from std_msgs.msg import String, Bool, Empty, Float32
@@ -98,6 +101,9 @@ class PlannerNode(Node):
         )
         self.status_pub = self.create_publisher(DiagnosticStatus, "/diagnostics", 1)
         self.detour_path_pub = self.create_publisher(Path, "/planning/detour_path", 1)
+        # Obstacle-avoidance debugging for Foxglove (see publishObstacleDebug)
+        self.obstacle_debug_pub = self.create_publisher(ObstacleDebug, "/planning/obstacle_debug", 1)
+        self.obstacle_markers_pub = self.create_publisher(MarkerArray, "/vis/obstacle_debug", 1)
 
         self.generateCandidates()
 
@@ -178,10 +184,14 @@ class PlannerNode(Node):
         self.obstacle_stop_time = None # when we stopped for the current obstacle
         self.last_planned_stamp = None # grid stamp we last planned on (plan once per grid)
         self.stop_reason = ""          # shown in the status while stopped for an obstacle
+        # The obstacle the current detour goes around (cells touching the stop box when
+        # the detour was planned, map frame). Only used for the debug markers.
+        self.detour_target_map = np.zeros((0, 2))
+        self.last_status = ""          # latest /diagnostics message, echoed in obstacle_debug
 
         self.previous_twist = Twist()
 
-        self.create_timer(0.1, self.updateTrajectorySimply)
+        self.create_timer(0.1, self.plannerTick)
         # self.create_timer(0.1, self.updateTrajectory)
 
     def closestPointBlCb(self, msg: PointStamped):
@@ -276,8 +286,19 @@ class PlannerNode(Node):
     def isObstacleAhead(self, max_x=None) -> bool:
         """True if enough occupied cells sit in a box directly ahead of the robot.
         max_x shortens the box (used mid-detour to check only up to the next waypoint)."""
+        return self.stopBoxCellCount(max_x) >= self.MIN_OBSTACLE_CELLS
+
+    def stopBoxCellCount(self, max_x=None) -> int:
+        """Occupied cells in the stop box (see stopBoxSlices)."""
+        box = self.stopBoxSlices(max_x)
+        if box is None:
+            return 0
+        return int(np.count_nonzero(self.occ_map[box] >= 50))
+
+    def stopBoxSlices(self, max_x=None):
+        """(rows, cols) slices of the stop box in occ_map, or None with no grid yet."""
         if self.occ_map is None or self.occ_info is None:
-            return False
+            return None
 
         res = self.occ_info.resolution
         ox = self.occ_info.origin.position.x
@@ -292,8 +313,24 @@ class PlannerNode(Node):
         row_lo = int(np.clip(round((-self.STOP_BOX_HALF_WIDTH - oy) / res), 0, height))
         row_hi = int(np.clip(round((self.STOP_BOX_HALF_WIDTH - oy) / res), 0, height))
 
-        patch = self.occ_map[row_lo:row_hi, col_lo:col_hi]
-        return int(np.count_nonzero(patch >= 50)) >= self.MIN_OBSTACLE_CELLS
+        return slice(row_lo, row_hi), slice(col_lo, col_hi)
+
+    def stopBoxObstacleBl(self, max_x=None):
+        """Cell centers (Nx2, base_link) of every obstacle touching the stop box: each
+        connected blob of occupied cells with at least one cell in the box, so the whole
+        obstacle shows, not just the part inside the box. Used for the debug markers."""
+        box = self.stopBoxSlices(max_x)
+        if box is None:
+            return np.zeros((0, 2))
+        blobs, _ = label(self.occ_map >= 50, structure=np.ones((3, 3)))
+        ids = np.unique(blobs[box])
+        ids = ids[ids > 0]
+        if len(ids) == 0:
+            return np.zeros((0, 2))
+        rows, cols = np.nonzero(np.isin(blobs, ids))
+        res = self.occ_info.resolution
+        ox, oy = self.occ_info.origin.position.x, self.occ_info.origin.position.y
+        return np.column_stack((ox + (cols + 0.5) * res, oy + (rows + 0.5) * res))
 
     def metersToCell(self, x, y):
         res = self.occ_info.resolution
@@ -474,6 +511,7 @@ class PlannerNode(Node):
         occ_bl = self.occupiedCellsBl()
         self.detour_obstacles_map = self.blToMap(
             occ_bl[np.hypot(occ_bl[:, 0], occ_bl[:, 1]) < 8.0], pose)
+        self.detour_target_map = self.blToMap(self.stopBoxObstacleBl(), pose)
         self.obstacle_stop_time = None
         self.publishDetourPath()
         self.get_logger().info(
@@ -483,6 +521,7 @@ class PlannerNode(Node):
         if self.detour_map is not None:
             self.detour_map = None
             self.publishDetourPath()  # empty path clears it in Foxglove
+        self.detour_target_map = np.zeros((0, 2))
         self.point_turn_direction = 0
         self.detour_clear_ticks = 0
 
@@ -498,6 +537,159 @@ class PlannerNode(Node):
                 pose_msg.pose.position.y = float(y)
                 msg.poses.append(pose_msg)
         self.detour_path_pub.publish(msg)
+
+    # ---- Obstacle-avoidance debugging (Foxglove) ----
+
+    def plannerTick(self):
+        self.updateTrajectorySimply()
+        # Debug output must never stop the robot from being driven.
+        try:
+            self.publishObstacleDebug()
+        except Exception as e:
+            self.get_logger().error(f"Obstacle debug publish failed: {e!r}",
+                                    throttle_duration_sec=5.0)
+
+    def obstacleDebugState(self, waited):
+        """(state, detail) for /planning/obstacle_debug, derived from the planner's
+        obstacle state so the driving code doesn't need to report it separately."""
+        if self.detour_map is not None:
+            detail = f"detour point {self.detour_idx + 1} / {len(self.detour_map)}"
+            if self.detour_clear_ticks > 0:
+                detail += f", obstacle passed check {self.detour_clear_ticks} / {self.DETOUR_EXIT_TICKS}"
+            return ObstacleDebug.DETOURING, detail
+        if self.obstacle_stop_time is None:
+            # Not stopped yet, but the box can already be blocked: e.g. the tick a blocked
+            # detour is dropped, before the next tick stops the robot.
+            if self.isObstacleAhead():
+                return ObstacleDebug.OBSTACLE_DETECTED, "stopping"
+            return ObstacleDebug.CLEAR, ""
+        if self.stop_reason.startswith("no way around"):
+            return ObstacleDebug.NO_PATH, "no route around obstacle; retrying on each new scan"
+        if self.obstacle_clear_scans > 0:
+            return (ObstacleDebug.CHECKING,
+                    f"{self.obstacle_clear_scans} / {self.OBSTACLE_CLEAR_SCANS} clear scans")
+        if abs(self.previous_twist.linear.x) > 0.05 or abs(self.previous_twist.angular.z) > 0.05:
+            return ObstacleDebug.OBSTACLE_DETECTED, "stopping"
+        detail = f"{min(waited, self.DYNAMIC_OBSTACLE_WAIT):.1f} / {self.DYNAMIC_OBSTACLE_WAIT:.1f} s"
+        if waited >= self.DYNAMIC_OBSTACLE_WAIT:
+            # Static: planning on the next fresh grid, or blocked by a missing heading/pose.
+            reason = self.stop_reason if "heading" in self.stop_reason or "pose" in self.stop_reason \
+                else "static, planning detour"
+            detail += f" ({reason})"
+        return ObstacleDebug.CHECKING, detail
+
+    def publishObstacleDebug(self):
+        now = self.get_clock().now()
+        waited = 0.0 if self.obstacle_stop_time is None else \
+            (now - self.obstacle_stop_time).nanoseconds * 1e-9
+        state, detail = self.obstacleDebugState(waited)
+        detouring = self.detour_map is not None
+        # Mid-detour the planner only checks the stretch just ahead (see updateTrajectorySimply).
+        box_max_x = self.DETOUR_LOOKAHEAD + 0.5 if detouring else None
+
+        msg = ObstacleDebug()
+        msg.header.stamp = now.to_msg()
+        msg.header.frame_id = "base_link"
+        msg.state = state
+        msg.detail = detail
+        msg.planner_status = self.last_status
+        msg.wait_elapsed = float(waited)
+        msg.wait_required = float(self.DYNAMIC_OBSTACLE_WAIT)
+        msg.clear_scans = int(min(self.obstacle_clear_scans, 255))
+        msg.clear_scans_required = int(self.OBSTACLE_CLEAR_SCANS)
+        msg.stop_box_cells = int(min(self.stopBoxCellCount(box_max_x), 65535))
+        msg.stop_box_cells_required = int(self.MIN_OBSTACLE_CELLS)
+        msg.grid_age = -1.0 if self.occ_stamp is None else float((now - self.occ_stamp).nanoseconds * 1e-9)
+        if detouring:
+            msg.detour_waypoint = int(min(self.detour_idx + 1, 65535))
+            msg.detour_length = int(min(len(self.detour_map), 65535))
+        msg.detour_exit_ticks = int(min(self.detour_clear_ticks, 255))
+        msg.detour_exit_ticks_required = int(self.DETOUR_EXIT_TICKS)
+        self.obstacle_debug_pub.publish(msg)
+
+        self.obstacle_markers_pub.publish(self.obstacleMarkers(msg, box_max_x))
+
+    STATE_COLORS = {  # RGBA, matches the Indicator panel in config/foxglove/nav_debug_layout.json
+        ObstacleDebug.CLEAR: (0.13, 0.77, 0.37, 1.0),               # green
+        ObstacleDebug.OBSTACLE_DETECTED: (0.98, 0.80, 0.08, 1.0),   # yellow
+        ObstacleDebug.CHECKING: (0.96, 0.62, 0.04, 1.0),            # amber
+        ObstacleDebug.DETOURING: (0.23, 0.51, 0.96, 1.0),           # blue
+        ObstacleDebug.NO_PATH: (0.94, 0.27, 0.27, 1.0),             # red
+    }
+
+    def obstacleMarkers(self, dbg: ObstacleDebug, box_max_x):
+        """Stop box, the obstacle in it (from detection, through the wait, and the one a
+        detour goes around), the remembered obstacles, the detour exit line, and a label."""
+        stamp = dbg.header.stamp
+
+        def rgba(c):
+            return ColorRGBA(r=c[0], g=c[1], b=c[2], a=c[3])
+
+        color = rgba(self.STATE_COLORS[dbg.state])
+        markers = [Marker(action=Marker.DELETEALL)]  # drop last tick's markers
+
+        def marker(ns, mtype, frame="base_link"):
+            m = Marker(ns=ns, id=0, type=mtype, action=Marker.ADD)
+            m.header.frame_id = frame
+            m.header.stamp = stamp
+            m.pose.orientation.w = 1.0
+            markers.append(m)
+            return m
+
+        def cells(ns, pts, color_tuple, frame="base_link", z=0.15):
+            if len(pts) == 0:
+                return
+            m = marker(ns, Marker.CUBE_LIST, frame)
+            res = self.occ_info.resolution if self.occ_info is not None else 0.2
+            m.scale.x = m.scale.y = res * 0.9
+            m.scale.z = 0.3
+            m.color = rgba(color_tuple)
+            m.points = [Point(x=float(x), y=float(y), z=z) for x, y in pts]
+
+        # Stop box outline (the short box while detouring), coloured by state.
+        box = marker("stop_box", Marker.LINE_STRIP)
+        x0 = self.STOP_BOX_MIN_X
+        x1 = self.STOP_BOX_MAX_X if box_max_x is None else min(box_max_x, self.STOP_BOX_MAX_X)
+        w = self.STOP_BOX_HALF_WIDTH
+        box.points = [Point(x=x, y=y, z=0.05) for x, y in
+                      ((x0, -w), (x1, -w), (x1, w), (x0, w), (x0, -w))]
+        box.scale.x = 0.08
+        box.color = color
+
+        # The obstacle in the stop box, from the latest grid: shows from the first tick
+        # it's seen and follows it through the static-or-dynamic wait.
+        if dbg.stop_box_cells > 0:
+            cells("obstacle", self.stopBoxObstacleBl(box_max_x), self.STATE_COLORS[dbg.state])
+
+        pose = self.getPoseInMap() if self.detour_map is not None else None
+        if self.detour_map is not None and pose is not None:
+            # Fixed in the map: what the detour was planned around (red) and every
+            # remembered obstacle the exit check still uses (grey).
+            cells("remembered_obstacles", self.detour_obstacles_map, (0.6, 0.6, 0.6, 0.35),
+                  frame="map", z=0.05)
+            cells("detour_obstacle", self.detour_target_map, (0.94, 0.27, 0.27, 0.8),
+                  frame="map", z=0.2)
+            # Straight line to the seedling the exit check tests; green while it passes.
+            if self.closest_point_bl is not None:
+                gx, gy = self.closest_point_bl
+                d = math.hypot(gx, gy)
+                if d > 1e-3:
+                    k = min(d, self.DETOUR_EXIT_LOOKAHEAD) / d
+                    line = marker("exit_line", Marker.LINE_STRIP)
+                    line.points = [Point(z=0.1), Point(x=gx * k, y=gy * k, z=0.1)]
+                    line.scale.x = 0.06
+                    line.color = rgba(((0.13, 0.77, 0.37, 1.0) if self.detour_clear_ticks > 0
+                                            else (0.7, 0.7, 0.7, 0.8)))
+
+        # State label above the robot.
+        text = marker("label", Marker.TEXT_VIEW_FACING)
+        text.pose.position.x = 0.0
+        text.pose.position.z = 2.0
+        text.scale.z = 0.5
+        text.color = color
+        text.text = dbg.state + (f"\n{dbg.detail}" if dbg.detail else "")
+
+        return MarkerArray(markers=markers)
 
 
     def generateCandidates(self, top_speed=1.5, time_horizon=5.0, dt=0.5):
@@ -850,6 +1042,7 @@ class PlannerNode(Node):
         self.twist_pub.publish(self.getSmoothed(cmd_msg))
 
     def publishStatus(self, desc: str, level=DiagnosticStatus.OK):
+        self.last_status = desc
         self.status_pub.publish(
             DiagnosticStatus(message=desc, level=level, name=self.get_name())
         )
