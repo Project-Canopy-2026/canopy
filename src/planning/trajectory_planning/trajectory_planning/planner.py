@@ -161,6 +161,14 @@ class PlannerNode(Node):
 
         # Detour following
         self.DETOUR_SETTLE_TIME = 1.0  # s after stopping before a grid counts as fresh
+        # Dynamic obstacles: after stopping, wait this long before planning a detour.
+        # If the stop box clears in that time (e.g. a person walked past), resume the
+        # normal path; otherwise treat the obstacle as static and detour around it.
+        self.DYNAMIC_OBSTACLE_WAIT = 3.0  # s
+        # Consecutive clear scans needed before treating a stopped-for obstacle as gone.
+        # Counted per new grid, not per tick, since the grid can arrive at 1-10 Hz.
+        # Stops a one-scan LiDAR dropout from resuming the robot and restarting the wait.
+        self.OBSTACLE_CLEAR_SCANS = 3
         self.DETOUR_WP_SPACING = 2.0   # m between waypoints kept from the planned path
         self.DETOUR_WP_REACHED = 0.7   # m; closer than this counts as reached
         self.DETOUR_SPEED = 0.3        # m/s cap while detouring
@@ -183,6 +191,8 @@ class PlannerNode(Node):
         # planned around are remembered (map frame) to tell when they're behind us.
         self.detour_obstacles_map = np.zeros((0, 2))
         self.obstacle_stop_time = None # when we stopped for the current obstacle
+        self.obstacle_clear_scans = 0  # consecutive clear grids seen while stopped
+        self.last_clear_stamp = None   # grid stamp last counted as clear
         self.last_planned_stamp = None # grid stamp we last planned on (plan once per grid)
         self.stop_reason = ""          # shown in the status while stopped for an obstacle
         # The obstacle the current detour goes around (cells touching the stop box when
@@ -475,19 +485,25 @@ class PlannerNode(Node):
         return float(np.linalg.norm(obs - t[:, None] * ab, axis=1).min()) >= self.DETOUR_EXIT_CLEARANCE
 
     def stopAndPlanDetour(self):
-        """Obstacle ahead and no detour yet: stop, wait for a fresh grid, plan once per grid."""
+        """Obstacle ahead and no detour yet: stop, wait to see if it moves, then plan
+        once per grid. If the obstacle clears during the wait, updateTrajectorySimply
+        stops calling this and the normal path resumes."""
         self.twist_pub.publish(self.getSmoothed(Twist()))
         self.point_turn_direction = 0
 
         now = self.get_clock().now()
         if self.obstacle_stop_time is None:
             self.obstacle_stop_time = now
-            self.stop_reason = "obstacle ahead, waiting for fresh scan"
+            self.stop_reason = "checking if obstacle is static or dynamic"
+            self.get_logger().info(
+                f"Obstacle ahead; waiting {self.DYNAMIC_OBSTACLE_WAIT:.1f} s before detouring")
         waited = (now - self.obstacle_stop_time).nanoseconds * 1e-9
         status = f"Stopped ({waited:.0f} s): {self.stop_reason}"
 
-        # Only plan on a grid built after we'd stopped, and only once per grid.
-        settled = self.obstacle_stop_time + Duration(seconds=self.DETOUR_SETTLE_TIME)
+        # Only plan on a grid built after the dynamic-obstacle wait (which is also
+        # long enough for the scan to settle after stopping), and only once per grid.
+        wait = max(self.DETOUR_SETTLE_TIME, self.DYNAMIC_OBSTACLE_WAIT)
+        settled = self.obstacle_stop_time + Duration(seconds=wait)
         already_tried = self.last_planned_stamp is not None and self.occ_stamp == self.last_planned_stamp
         if self.occ_stamp is None or self.occ_stamp < settled or already_tried:
             self.publishStatus(status, DiagnosticStatus.WARN)
@@ -1192,8 +1208,28 @@ class PlannerNode(Node):
         if self.detour_map is None:
             blocked = self.isObstacleAhead()
             if blocked:
+                self.obstacle_clear_scans = 0
                 self.stopAndPlanDetour()
                 return
+            if self.obstacle_stop_time is not None:
+                # Stopped for an obstacle that now reads clear. Stay stopped until it
+                # stays clear for a few scans, keeping obstacle_stop_time so a flicker
+                # doesn't restart the dynamic-obstacle wait.
+                # rclpy Time raises TypeError when compared with None, so check None first.
+                if self.last_clear_stamp is None or self.occ_stamp != self.last_clear_stamp:
+                    self.last_clear_stamp = self.occ_stamp
+                    self.obstacle_clear_scans += 1
+                if self.obstacle_clear_scans < self.OBSTACLE_CLEAR_SCANS:
+                    self.twist_pub.publish(self.getSmoothed(Twist()))
+                    self.point_turn_direction = 0
+                    self.publishStatus(
+                        f"Stopped: checking if obstacle is static or dynamic. "
+                        f"{self.obstacle_clear_scans}/{self.OBSTACLE_CLEAR_SCANS} clear scans",
+                        DiagnosticStatus.WARN)
+                    return
+                self.obstacle_clear_scans = 0
+                waited = (self.get_clock().now() - self.obstacle_stop_time).nanoseconds * 1e-9
+                self.get_logger().info(f"Obstacle cleared after {waited:.1f} s; resuming path")
             self.obstacle_stop_time = None
             goal_point = self.closest_point_bl
             target = "seedling"
