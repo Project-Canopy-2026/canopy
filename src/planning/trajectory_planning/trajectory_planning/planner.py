@@ -146,6 +146,18 @@ class PlannerNode(Node):
         self.steady_grids = 0         # consecutive fresh grids, each < max gap apart
         self.last_fresh_occ_stamp = None
 
+        # After planting, drive straight ahead before resuming normal navigation, so
+        # the seedling passes fully under the robot and the next turn can't run it
+        # over. One full robot length clears it wherever the planter is mounted.
+        self.ROBOT_LENGTH = 1.52        # m, Warthog (same as nav_viz_node)
+        self.POST_PLANT_LEEWAY = 0.3    # m, margin for wheel slip (odom over-reads) and stopping
+        self.POST_PLANT_DISTANCE = self.ROBOT_LENGTH + self.POST_PLANT_LEEWAY  # m
+        self.POST_PLANT_SPEED = 0.3     # m/s
+        self.POST_PLANT_TIMEOUT = 2.0 * self.POST_PLANT_DISTANCE / self.POST_PLANT_SPEED  # s
+        self.post_plant_drive_active = False
+        self.post_plant_start_xy = None    # odom-frame position where the drive started
+        self.post_plant_drive_time = 0.0   # s spent commanding forward (for the timeout)
+
         # Obstacle stop box, in base_link meters
         self.STOP_BOX_MIN_X = 1.0  # starts past the occupancy node's self-filter
         self.STOP_BOX_MAX_X = 3.0
@@ -220,8 +232,12 @@ class PlannerNode(Node):
     def isPlantingCb(self, msg: Bool):
         if msg.data and not self.is_planting:
             self.clearDetour()  # seedling reached; any detour belonged to it
+            self.post_plant_drive_active = False
         if self.is_planting and not msg.data:
             self.awaitSteadyOcc("after planting")
+            self.post_plant_drive_active = True
+            self.post_plant_start_xy = None
+            self.post_plant_drive_time = 0.0
         self.is_planting = msg.data
 
     def awaitSteadyOcc(self, reason: str):
@@ -430,6 +446,21 @@ class PlannerNode(Node):
         q = tf.transform.rotation
         yaw = math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
         return tf.transform.translation.x, tf.transform.translation.y, yaw
+
+    def getOdomXY(self):
+        """(x, y) of base_link in the odom frame (Warthog wheel odometry), or None if
+        missing or old. Used for short relative moves: it's smooth and doesn't depend
+        on gnss_interface's map->odom, which can lag several seconds (11-13 bags)."""
+        try:
+            tf = self.tf_buffer.lookup_transform("odom", "base_link", rclpy.time.Time())
+        except TransformException as ex:
+            self.get_logger().warning(f"No odom->base_link: {ex}", throttle_duration_sec=2.0)
+            return None
+        age = (self.get_clock().now() - Time.from_msg(tf.header.stamp)).nanoseconds * 1e-9
+        if age > 1.0:
+            self.get_logger().warning(f"odom->base_link is {age:.1f} s old", throttle_duration_sec=2.0)
+            return None
+        return np.array([tf.transform.translation.x, tf.transform.translation.y])
 
     def blToMap(self, pts_bl, pose):
         """base_link points (Nx2) -> map frame, given the robot pose (x, y, yaw) in map."""
@@ -1188,6 +1219,46 @@ class PlannerNode(Node):
             self.get_logger().warn(f"Obstacle data stale; waiting for steady obstacle data {reason}")
             self.awaitSteadyOcc(reason)
             return
+
+        # Post-plant drive: straight ahead for POST_PLANT_DISTANCE, then fall through
+        # to normal navigation. Runs after the steady-grid wait above, so the stop box
+        # check uses lidar data from after planting.
+        if self.post_plant_drive_active:
+            xy = self.getOdomXY()
+            if xy is None:
+                # Can't tell how far we've gone; hold rather than drive blind.
+                self.point_turn_direction = 0
+                self.twist_pub.publish(self.getSmoothed(Twist()))
+                self.publishStatus("Post-plant drive: wheel odometry unavailable. Holding.",
+                                   DiagnosticStatus.WARN)
+                return
+            if self.post_plant_start_xy is None:
+                self.post_plant_start_xy = xy
+            driven = float(np.linalg.norm(xy - self.post_plant_start_xy))
+
+            if driven >= self.POST_PLANT_DISTANCE:
+                self.get_logger().info(f"Post-plant drive done ({driven:.2f} m)")
+                self.post_plant_drive_active = False
+            elif self.post_plant_drive_time > self.POST_PLANT_TIMEOUT:
+                # Commanded forward this long without covering the distance (stuck,
+                # slipping, or pose not updating). Give up rather than push forever.
+                self.get_logger().warn(f"Post-plant drive timed out after {driven:.2f} m")
+                self.post_plant_drive_active = False
+            elif self.isObstacleAhead():
+                # Don't drive into it; let the normal obstacle handling below take over.
+                self.get_logger().info(f"Obstacle ahead; ending post-plant drive after {driven:.2f} m")
+                self.post_plant_drive_active = False
+            else:
+                self.point_turn_direction = 0
+                cmd_msg = Twist()
+                cmd_msg.linear.x = self.POST_PLANT_SPEED
+                self.twist_pub.publish(self.getSmoothed(cmd_msg))
+                # Only time spent driving counts toward the timeout, so pausing,
+                # e-stop or holding for pose/grid data doesn't use it up.
+                self.post_plant_drive_time += 0.1  # timer period
+                self.publishStatus(
+                    f"Driving forward after planting ({driven:.1f}/{self.POST_PLANT_DISTANCE:.1f} m)")
+                return
 
         # Obstacle handling: stop, plan a detour once, then follow its waypoints
         # with the same steering code below. The goal is either the seedling or
