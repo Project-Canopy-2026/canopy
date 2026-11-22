@@ -66,6 +66,7 @@ ping -c 2 192.168.1.202 # velodyne lidar
 # 7. check warthog battery level
 ros2 topic echo /w200_0120/platform/bms/state --once
 
+# 8. launch 
 source install/setup.bash
 ros2 launch /home/teamj/dev/ros2_ws/src/canopy/launch/canopy_launch.launch.py
 ```
@@ -212,5 +213,9 @@ ros2 bag record -s mcap \
   /velodyne_packets \
   /behavior/is_planting \
   /w200_0120/cmd_vel \
-  /tf_static
+  /tf_static \
+  /gps/gpsfix \
+  /gnss/odom \
+  /planning/closest_seedling_bl \
+  /cost/total
 ```
