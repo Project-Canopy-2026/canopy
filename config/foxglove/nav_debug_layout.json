@@ -261,6 +261,18 @@
           "enabled": false,
           "timestampMethod": "receiveTime",
           "label": "grid age (s)"
+        },
+        {
+          "value": "/planning/obstacle_debug.bearing_age",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "bearing age (s)"
+        },
+        {
+          "value": "/planning/obstacle_debug.bearing_old_age",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "bearing old after (s)"
         }
       ],
       "showLegend": true,
@@ -268,6 +280,28 @@
       "xAxisVal": "timestamp",
       "followingViewWidth": 30,
       "foxglovePanelTitle": "Obstacle check"
+    },
+    "Indicator!bearing_state": {
+      "path": "/planning/obstacle_debug.bearing_old",
+      "style": "background",
+      "fallbackColor": "#6b7280",
+      "fallbackLabel": "NO DATA",
+      "rules": [
+        {
+          "operator": "=",
+          "rawValue": "true",
+          "color": "#ef4444",
+          "label": "BEARING OLD"
+        },
+        {
+          "operator": "=",
+          "rawValue": "false",
+          "color": "#22c55e",
+          "label": "BEARING OK"
+        }
+      ],
+      "foxglovePanelTitle": "Seedling bearing",
+      "fontSize": 28
     }
   },
   "globalVariables": {},
@@ -290,7 +324,12 @@
         "direction": "row",
         "first": {
           "direction": "column",
-          "first": "Indicator!obstacle_state",
+          "first": {
+            "direction": "row",
+            "first": "Indicator!obstacle_state",
+            "second": "Indicator!bearing_state",
+            "splitPercentage": 60
+          },
           "second": {
             "direction": "column",
             "first": "RawMessages!obstacle_detail",

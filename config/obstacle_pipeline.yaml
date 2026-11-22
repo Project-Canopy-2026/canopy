@@ -22,7 +22,7 @@ ground_segmentation:
   ros__parameters:
     cloud_topic: "/velodyne_points"
     frame_id: "velodyne"
-    sensor_height: 1.355  # lidar height above ground (not above base_link)
+    sensor_height: 1.338  # lidar height above ground (not above base_link)
     num_iter: 3
     num_lpr: 20
     num_min_pts: 0
@@ -37,7 +37,7 @@ ground_segmentation:
     uprightness_thr: 0.707
     # Cloud is de-rotated into a level frame before segmentation. +ve pitch = tilted down.
     # Keep in sync with velodyne_static_tf in the launch file.
-    lidar_roll_deg: 0.97
-    lidar_pitch_deg: 19.32
+    lidar_roll_deg: 0.37
+    lidar_pitch_deg: 20.43
     verbose: false
     display_time: false

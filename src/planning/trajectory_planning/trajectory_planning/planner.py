@@ -125,6 +125,7 @@ class PlannerNode(Node):
         self.is_turning_downhill = False
         self.closest_point_bl = None
         self.closest_point_bl_time = None  # when the last bearing arrived
+        self.BEARING_OLD_AGE = 0.5  # s; older bearings are flagged (not acted on) in obstacle_debug
         self.remaining_seedling_count = 0
         self.heading_valid = False
         self.estopped = False
@@ -199,6 +200,12 @@ class PlannerNode(Node):
         # cost_map_node stamps this with the time of the /gnss/odom pose it was
         # computed from, so the age check below sees how old the bearing really is.
         self.closest_point_bl_time = Time.from_msg(msg.header.stamp)
+
+    def bearingAge(self):
+        """s since the pose the seedling bearing was computed from, or None with no bearing."""
+        if self.closest_point_bl_time is None:
+            return None
+        return (self.get_clock().now() - self.closest_point_bl_time).nanoseconds * 1e-9
 
     def isPlantingCb(self, msg: Bool):
         if msg.data and not self.is_planting:
@@ -565,17 +572,17 @@ class PlannerNode(Node):
             return ObstacleDebug.CLEAR, ""
         if self.stop_reason.startswith("no way around"):
             return ObstacleDebug.NO_PATH, "no route around obstacle; retrying on each new scan"
-        if self.obstacle_clear_scans > 0:
-            return (ObstacleDebug.CHECKING,
-                    f"{self.obstacle_clear_scans} / {self.OBSTACLE_CLEAR_SCANS} clear scans")
         if abs(self.previous_twist.linear.x) > 0.05 or abs(self.previous_twist.angular.z) > 0.05:
             return ObstacleDebug.OBSTACLE_DETECTED, "stopping"
-        detail = f"{min(waited, self.DYNAMIC_OBSTACLE_WAIT):.1f} / {self.DYNAMIC_OBSTACLE_WAIT:.1f} s"
-        if waited >= self.DYNAMIC_OBSTACLE_WAIT:
-            # Static: planning on the next fresh grid, or blocked by a missing heading/pose.
+        # Stopped: stopAndPlanDetour waits DETOUR_SETTLE_TIME, then plans on the next fresh grid.
+        detail = f"{min(waited, self.DETOUR_SETTLE_TIME):.1f} / {self.DETOUR_SETTLE_TIME:.1f} s"
+        if waited >= self.DETOUR_SETTLE_TIME:
+            # Planning on the next fresh grid, or blocked by a missing heading/pose.
             reason = self.stop_reason if "heading" in self.stop_reason or "pose" in self.stop_reason \
-                else "static, planning detour"
+                else "planning detour on next scan"
             detail += f" ({reason})"
+        else:
+            detail += " (waiting for fresh scan)"
         return ObstacleDebug.CHECKING, detail
 
     def publishObstacleDebug(self):
@@ -587,6 +594,12 @@ class PlannerNode(Node):
         # Mid-detour the planner only checks the stretch just ahead (see updateTrajectorySimply).
         box_max_x = self.DETOUR_LOOKAHEAD + 0.5 if detouring else None
 
+        bearing_age = self.bearingAge()
+        bearing_old = bearing_age is not None and bearing_age > self.BEARING_OLD_AGE
+        if bearing_old:
+            detail = (f"{detail}\n" if detail else "") + \
+                f"BEARING OLD: {bearing_age:.1f} s"
+
         msg = ObstacleDebug()
         msg.header.stamp = now.to_msg()
         msg.header.frame_id = "base_link"
@@ -594,9 +607,11 @@ class PlannerNode(Node):
         msg.detail = detail
         msg.planner_status = self.last_status
         msg.wait_elapsed = float(waited)
-        msg.wait_required = float(self.DYNAMIC_OBSTACLE_WAIT)
-        msg.clear_scans = int(min(self.obstacle_clear_scans, 255))
-        msg.clear_scans_required = int(self.OBSTACLE_CLEAR_SCANS)
+        msg.wait_required = float(self.DETOUR_SETTLE_TIME)
+        # clear_scans / clear_scans_required stay 0: no clear-scan check on this branch.
+        msg.bearing_age = -1.0 if bearing_age is None else float(bearing_age)
+        msg.bearing_old_age = float(self.BEARING_OLD_AGE)
+        msg.bearing_old = bearing_old
         msg.stop_box_cells = int(min(self.stopBoxCellCount(box_max_x), 65535))
         msg.stop_box_cells_required = int(self.MIN_OBSTACLE_CELLS)
         msg.grid_age = -1.0 if self.occ_stamp is None else float((now - self.occ_stamp).nanoseconds * 1e-9)
@@ -1138,13 +1153,13 @@ class PlannerNode(Node):
             return
 
         # The bearing comes from cost_map_node, computed from /gnss/odom and stamped
-        # with that pose's time. If it's old, stop rather than keep turning on it.
-        bearing_age = (self.get_clock().now() - self.closest_point_bl_time).nanoseconds * 1e-9
-        if bearing_age > 0.5:
-            self.publishStatus(f"Seedling bearing is {bearing_age:.1f}s old. Holding.",
-                               level=DiagnosticStatus.WARN)
-            self.twist_pub.publish(self.getSmoothed(Twist()))
-            return
+        # with that pose's time. It's often late (11-20 bag: fresh poses arrived 0.6-1.2 s
+        # old, every 1-2 s), and holding until it was fresh gave stop/go jitter. So keep
+        # driving on the last bearing; its age is shown in obstacle_debug (Foxglove).
+        bearing_age = self.bearingAge()
+        if bearing_age > self.BEARING_OLD_AGE:
+            self.get_logger().warn(f"Seedling bearing is {bearing_age:.1f} s old; driving on it",
+                                   throttle_duration_sec=5.0)
 
         # Hold existing grid if lidar data is old
         occ_age = None if self.occ_stamp is None else (self.get_clock().now() - self.occ_stamp).nanoseconds * 1e-9

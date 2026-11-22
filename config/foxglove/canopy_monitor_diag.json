@@ -139,6 +139,17 @@
                     "colorMode": "costmap",
                     "alpha": 0.3,
                     "frameLocked": false
+                },
+                "/vis/obstacle_debug": {
+                    "visible": true
+                },
+                "/planning/detour_path": {
+                    "visible": true,
+                    "lineWidth": 0.12,
+                    "gradient": [
+                        "#d946ef",
+                        "#d946ef"
+                    ]
                 }
             },
             "layers": {
@@ -477,6 +488,30 @@
                         "second": "Canopy Planner.Seedling Planner!seedplan",
                         "splitPercentage": 8
                     }
+                },
+                {
+                    "title": "Obstacle Avoidance",
+                    "layout": {
+                        "direction": "column",
+                        "first": {
+                            "direction": "row",
+                            "first": {
+                                "direction": "row",
+                                "first": "Indicator!obstacle_state",
+                                "second": "Indicator!bearing_state",
+                                "splitPercentage": 60
+                            },
+                            "second": {
+                                "direction": "row",
+                                "first": "RawMessages!obstacle_detail",
+                                "second": "RawMessages!navdiag",
+                                "splitPercentage": 50
+                            },
+                            "splitPercentage": 45
+                        },
+                        "second": "Plot!obstacle_plot",
+                        "splitPercentage": 22
+                    }
                 }
             ]
         },
@@ -545,6 +580,144 @@
             "fontSize": 16,
             "foxglovePanelTitle": "Mission progress",
             "defaultExpanded": false
+        },
+        "Indicator!obstacle_state": {
+            "path": "/planning/obstacle_debug.state",
+            "style": "background",
+            "fallbackColor": "#6b7280",
+            "fallbackLabel": "NO DATA",
+            "rules": [
+                {
+                    "operator": "=",
+                    "rawValue": "CLEAR",
+                    "color": "#22c55e",
+                    "label": "CLEAR"
+                },
+                {
+                    "operator": "=",
+                    "rawValue": "OBSTACLE DETECTED",
+                    "color": "#facc15",
+                    "label": "OBSTACLE DETECTED"
+                },
+                {
+                    "operator": "=",
+                    "rawValue": "CHECKING STATIC OR DYNAMIC",
+                    "color": "#f59e0b",
+                    "label": "CHECKING STATIC OR DYNAMIC"
+                },
+                {
+                    "operator": "=",
+                    "rawValue": "DETOURING",
+                    "color": "#3b82f6",
+                    "label": "DETOURING"
+                },
+                {
+                    "operator": "=",
+                    "rawValue": "NO PATH",
+                    "color": "#ef4444",
+                    "label": "NO PATH"
+                }
+            ],
+            "foxglovePanelTitle": "Obstacle avoidance",
+            "fontSize": 28
+        },
+        "RawMessages!obstacle_detail": {
+            "topicPath": "/planning/obstacle_debug.detail",
+            "diffEnabled": false,
+            "diffMethod": "custom",
+            "diffTopicPath": "",
+            "showFullMessageForDiff": false,
+            "fontSize": 22,
+            "foxglovePanelTitle": "Obstacle detail"
+        },
+        "Plot!obstacle_plot": {
+            "title": "Obstacle check",
+            "paths": [
+                {
+                    "value": "/planning/obstacle_debug.wait_elapsed",
+                    "enabled": true,
+                    "timestampMethod": "receiveTime",
+                    "label": "waited (s)"
+                },
+                {
+                    "value": "/planning/obstacle_debug.wait_required",
+                    "enabled": true,
+                    "timestampMethod": "receiveTime",
+                    "label": "wait required (s)"
+                },
+                {
+                    "value": "/planning/obstacle_debug.clear_scans",
+                    "enabled": true,
+                    "timestampMethod": "receiveTime",
+                    "label": "clear scans"
+                },
+                {
+                    "value": "/planning/obstacle_debug.stop_box_cells",
+                    "enabled": true,
+                    "timestampMethod": "receiveTime",
+                    "label": "cells in stop box"
+                },
+                {
+                    "value": "/planning/obstacle_debug.stop_box_cells_required",
+                    "enabled": true,
+                    "timestampMethod": "receiveTime",
+                    "label": "cells to block"
+                },
+                {
+                    "value": "/planning/obstacle_debug.grid_age",
+                    "enabled": false,
+                    "timestampMethod": "receiveTime",
+                    "label": "grid age (s)"
+                },
+                {
+                    "value": "/planning/obstacle_debug.bearing_age",
+                    "enabled": true,
+                    "timestampMethod": "receiveTime",
+                    "label": "bearing age (s)"
+                },
+                {
+                    "value": "/planning/obstacle_debug.bearing_old_age",
+                    "enabled": true,
+                    "timestampMethod": "receiveTime",
+                    "label": "bearing old after (s)"
+                }
+            ],
+            "showLegend": true,
+            "isSynced": true,
+            "xAxisVal": "timestamp",
+            "followingViewWidth": 30,
+            "foxglovePanelTitle": "Obstacle check"
+        },
+        "RawMessages!navdiag": {
+            "topicPath": "/diagnostics{name==\"trajectory_planner\"}.message",
+            "diffEnabled": false,
+            "diffMethod": "custom",
+            "diffTopicPath": "",
+            "showFullMessageForDiff": false,
+            "expansion": "all",
+            "foxglovePanelTitle": "Planner status"
+        },
+        "Indicator!bearing_state": {
+            "path": "/planning/obstacle_debug.bearing_old",
+            "style": "background",
+            "fallbackColor": "#6b7280",
+            "fallbackLabel": "NO DATA",
+            "rules": [
+                {
+                    "operator": "=",
+                    "rawValue": "true",
+                    "color": "#ef4444",
+                    "label": "BEARING OLD"
+                },
+                {
+                    "operator": "=",
+                    "rawValue": "false",
+                    "color": "#22c55e",
+                    "label": "BEARING OK"
+                }
+            ],
+            "foxglovePanelTitle": "Seedling bearing",
+            "fontSize": 28
         }
     },
     "globalVariables": {},

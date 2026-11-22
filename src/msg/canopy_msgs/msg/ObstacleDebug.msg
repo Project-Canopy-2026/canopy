@@ -29,3 +29,9 @@ uint16 detour_waypoint          # index of the closest path point (0 when not de
 uint16 detour_length            # number of path points (0 when not detouring)
 uint8 detour_exit_ticks         # consecutive ticks the "obstacle passed" check has passed
 uint8 detour_exit_ticks_required
+
+# Seedling bearing (/planning/closest_seedling_bl, stamped with the /gnss/odom pose it came from).
+# The planner keeps driving on an old bearing; these only report it.
+float32 bearing_age             # s since the pose the bearing was computed from (-1 with no bearing yet)
+float32 bearing_old_age         # age above which the bearing counts as old
+bool bearing_old                # bearing_age > bearing_old_age

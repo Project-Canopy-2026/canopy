@@ -98,10 +98,10 @@ def generate_launch_description():
         arguments=[
             "--x", "0.84",       # DONE: measure lidar x offset from base_link
             "--y", "0.52",       # DONE: measure lidar y offset from base_link (+ve = left)
-            "--z", "1.055",     # 1.355 m above ground (ground-plane fit) - ~0.30 m base_link height (Warthog wheel radius); keep in sync with sensor_height
+            "--z", "1.038",     # 1.355 m above ground (ground-plane fit) - ~0.30 m base_link height (Warthog wheel radius); keep in sync with sensor_height
             "--yaw", "0.0",
-            "--pitch", "0.3372",  # 19.32 deg tilted down (ground-plane fit); keep in sync with lidar_pitch_deg
-            "--roll", "0.0169",   # +0.97 deg (ground-plane fit); keep in sync with lidar_roll_deg
+            "--pitch", "0.35639623",  # 19.32 deg tilted down (ground-plane fit); keep in sync with lidar_pitch_deg
+            "--roll", "0.006457718",   # +0.97 deg (ground-plane fit); keep in sync with lidar_roll_deg
             "--frame-id", "base_link",
             "--child-frame-id", "velodyne"],
     )

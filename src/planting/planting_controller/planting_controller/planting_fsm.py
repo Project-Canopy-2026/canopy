@@ -124,7 +124,7 @@ class PlantingFsmNode(Node):
         self.declare_parameter('tamping_lift_cm',      15.0) # relative distance
         self.declare_parameter('shift_distance_cm',    23.0) # don't change
         self.declare_parameter('auger_rpm',            75)
-        self.declare_parameter('fsr_abort_voltage',    3.6)
+        self.declare_parameter('fsr_abort_voltage',    3.8)
         self.declare_parameter('fsr_poll_hz',          10.0)
         self.declare_parameter('fsr_abort_seconds',    1.0)
 
